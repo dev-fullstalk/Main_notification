@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Column1Channels from '../../components/inbox/Column1Channels';
 import Column2ConvList from '../../components/inbox/Column2ConvList';
 import Column3ChatArea from '../../components/inbox/Column3ChatArea';
@@ -8,7 +8,33 @@ import CustomerInfoPanel from '../../components/inbox/CustomerInfoPanel';
 import { useChatStore } from '../../store/useChatStore';
 
 export default function InboxPage() {
-  const { activeConversationId, conversations, contacts } = useChatStore();
+  const { 
+    activeConversationId, 
+    conversations, 
+    contacts,
+    fetchChannels,
+    fetchConversations,
+    fetchMessages,
+    activeChannelId
+  } = useChatStore();
+
+  // Initial data loading from database on mount
+  useEffect(() => {
+    fetchChannels();
+    fetchConversations(activeChannelId);
+  }, []);
+
+  // Polling to sync database updates (new conversations/messages from Telegram Bot Webhook)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchConversations(activeChannelId);
+      if (activeConversationId) {
+        fetchMessages(activeConversationId);
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [activeChannelId, activeConversationId]);
 
   // Find active conversation and contact profiles
   const activeConversation = conversations.find(c => c.id === activeConversationId);

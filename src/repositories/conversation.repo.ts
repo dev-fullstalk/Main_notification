@@ -9,6 +9,7 @@ export const conversationRepo = {
              cont.avatar_url as contact_avatar_url, 
              cont.phone as contact_phone, 
              cont.email as contact_email,
+             cont.external_user_id as contact_external_user_id,
              s.name as status
       FROM conversations conv
       JOIN contacts cont ON conv.contact_id = cont.id
@@ -26,6 +27,7 @@ export const conversationRepo = {
              cont.avatar_url as contact_avatar_url, 
              cont.phone as contact_phone, 
              cont.email as contact_email,
+             cont.external_user_id as contact_external_user_id,
              s.name as status
       FROM conversations conv
       JOIN contacts cont ON conv.contact_id = cont.id

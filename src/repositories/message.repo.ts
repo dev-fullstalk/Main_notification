@@ -27,7 +27,9 @@ export const messageRepo = {
     senderUserId: string | number | null,
     id__messages_types: number,
     content: string | null,
-    mediaUrl?: string | null
+    mediaUrl?: string | null,
+    externalMessageId?: string | null,
+    statusId: number = 2
   ): Promise<any> {
     // Insert new message
     const { rows } = await query(`
@@ -38,9 +40,10 @@ export const messageRepo = {
         id__messages_types, 
         content, 
         media_url, 
+        external_message_id,
         id__messages_statuses
       )
-      VALUES ($1, $2, $3, $4, $5, $6, 2) -- default status 2 ('sent')
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `, [
       conversationId,
@@ -48,7 +51,9 @@ export const messageRepo = {
       senderUserId || null,
       id__messages_types,
       content || null,
-      mediaUrl || null
+      mediaUrl || null,
+      externalMessageId || null,
+      statusId
     ]);
 
     // Format last message preview string based on type

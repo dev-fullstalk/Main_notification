@@ -6,10 +6,7 @@ import { Conversation } from '../types/conversation';
 import { Message } from '../types/message';
 
 import { mockUsers, currentUser } from '../mocks/users.mock';
-import { mockChannels } from '../mocks/channels.mock';
-import { mockContacts } from '../mocks/contacts.mock';
-import { mockConversations } from '../mocks/conversations.mock';
-import { mockMessages, mockDashboardStats } from '../mocks/messages.mock';
+import { mockDashboardStats } from '../mocks/messages.mock';
 
 interface ChatState {
   currentUser: User;
@@ -25,60 +22,154 @@ interface ChatState {
   dashboardStats: typeof mockDashboardStats;
   
   // Actions
-  setActiveChannelId: (id: string | null) => void;
-  setActiveConversationId: (id: string | null) => void;
+  setActiveChannelId: (id: string | null) => Promise<void>;
+  setActiveConversationId: (id: string | null) => Promise<void>;
   setSearchQuery: (query: string) => void;
   setStatusFilter: (filter: 'all' | 'unread' | 'active' | 'resolved') => void;
-  sendMessage: (conversationId: string, text: string, type?: 'text' | 'image' | 'file', mediaUrl?: string) => void;
+  sendMessage: (conversationId: string, text: string, type?: 'text' | 'image' | 'file', mediaUrl?: string) => Promise<void>;
   assignAgent: (conversationId: string, agentId: string | null) => void;
   changeConversationStatus: (conversationId: string, status: 'open' | 'pending' | 'resolved' | 'closed') => void;
   connectNewChannel: (platform: 'facebook' | 'zalo' | 'telegram' | 'tiktok', name: string, pageId: string) => void;
   disconnectChannel: (channelId: string) => void;
+
+  // Real Database integration actions
+  fetchChannels: () => Promise<void>;
+  fetchConversations: (channelId: string | null) => Promise<void>;
+  fetchMessages: (conversationId: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
   currentUser,
   users: mockUsers,
-  channels: mockChannels,
-  contacts: mockContacts,
-  conversations: mockConversations,
-  messages: mockMessages,
+  channels: [],
+  contacts: [],
+  conversations: [],
+  messages: [],
   activeChannelId: null,
-  activeConversationId: '201', // Default active conversation
+  activeConversationId: null,
   searchQuery: '',
   statusFilter: 'all',
   dashboardStats: mockDashboardStats,
 
-  setActiveChannelId: (id) => {
-    set({ activeChannelId: id });
-    
-    // Automatically select the first conversation matching the new channel filter
-    const state = get();
-    const filteredConv = state.conversations.filter(c => {
-      if (id && c.channelId !== id) return false;
-      return true;
-    });
-    
-    if (filteredConv.length > 0) {
-      set({ activeConversationId: filteredConv[0].id });
-      // Mark as read
-      get().setActiveConversationId(filteredConv[0].id);
-    } else {
-      set({ activeConversationId: null });
+  fetchChannels: async () => {
+    try {
+      const res = await fetch('/api/channels');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const mappedChannels: Channel[] = json.data.map((c: any) => ({
+          id: String(c.id),
+          platform: c.platform,
+          name: c.name,
+          externalChannelId: c.external_channel_id,
+          isActive: c.is_active,
+          avatarUrl: c.avatar_url || `https://img.icons8.com/color/512/${
+            c.platform === 'facebook' ? 'facebook-new' : c.platform === 'telegram' ? 'telegram-app' : c.platform
+          }.png`,
+        }));
+        set({ channels: mappedChannels });
+      }
+    } catch (err) {
+      console.error('Failed to fetch channels from DB API:', err);
     }
   },
 
-  setActiveConversationId: (id) => {
-    set({ activeConversationId: id });
+  fetchConversations: async (channelId) => {
+    try {
+      const url = channelId && channelId !== 'all' 
+        ? `/api/channels/${channelId}/conversations` 
+        : `/api/channels/all/conversations`; // backend service handles fallback if not matching channelId
+
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const conversations: Conversation[] = [];
+        const contacts: Contact[] = [];
+        
+        json.data.forEach((c: any) => {
+          conversations.push({
+            id: String(c.id),
+            channelId: String(c.channel_id),
+            contactId: String(c.contact_id),
+            assignedUserId: c.assigned_user_id ? String(c.assigned_user_id) : null,
+            status: c.status || 'open',
+            lastMessagePreview: c.last_message_preview || '',
+            lastMessageAt: c.last_message_at,
+            unreadCount: c.unread_count || 0
+          });
+
+          if (!contacts.some(ct => ct.id === String(c.contact_id))) {
+            contacts.push({
+              id: String(c.contact_id),
+              channelId: String(c.channel_id),
+              externalUserId: c.contact_external_user_id || '',
+              name: c.contact_name || 'Khách hàng',
+              avatarUrl: c.contact_avatar_url || `https://api.dicebear.com/7.x/adventurer/svg?seed=${c.contact_name || 'Customer'}`,
+              phone: c.contact_phone || undefined,
+              email: c.contact_email || undefined
+            });
+          }
+        });
+
+        set({ conversations, contacts });
+      }
+    } catch (err) {
+      console.error('Failed to fetch conversations from DB API:', err);
+    }
+  },
+
+  fetchMessages: async (conversationId) => {
+    if (!conversationId) return;
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/messages`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const messages: Message[] = json.data.map((m: any) => ({
+          id: String(m.id),
+          conversationId: String(m.conversation_id),
+          senderType: m.sender_type || (m.id__messages_sender_types === 1 ? 'customer' : 'agent'),
+          senderUserId: m.sender_user_id ? String(m.sender_user_id) : undefined,
+          messageType: m.message_type || 'text',
+          content: m.content || '',
+          mediaUrl: m.media_url || undefined,
+          status: m.status || 'sent',
+          createdAt: m.created_at
+        }));
+        set({ messages });
+      }
+    } catch (err) {
+      console.error(`Failed to fetch messages for conversation ${conversationId}:`, err);
+    }
+  },
+
+  setActiveChannelId: async (id) => {
+    set({ activeChannelId: id });
+    await get().fetchConversations(id);
     
-    if (!id) return;
+    // Automatically select the first conversation matching the new channel filter
+    const state = get();
+    if (state.conversations.length > 0) {
+      const firstConvId = state.conversations[0].id;
+      set({ activeConversationId: firstConvId });
+      await get().fetchMessages(firstConvId);
+    } else {
+      set({ activeConversationId: null, messages: [] });
+    }
+  },
+
+  setActiveConversationId: async (id) => {
+    set({ activeConversationId: id });
+    if (!id) {
+      set({ messages: [] });
+      return;
+    }
+    
+    await get().fetchMessages(id);
     
     // Clear unread count for this conversation when opened
     set((state) => {
       const updatedConversations = state.conversations.map((c) =>
         c.id === id ? { ...c, unreadCount: 0 } : c
       );
-      
       return { conversations: updatedConversations };
     });
   },
@@ -87,111 +178,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setStatusFilter: (filter) => set({ statusFilter: filter }),
 
-  sendMessage: (conversationId, text, type = 'text', mediaUrl) => {
-    const messageId = `m-sent-${Date.now()}`;
-    const timestamp = new Date().toISOString();
-    
-    const newMsg: Message = {
-      id: messageId,
-      conversationId,
-      senderType: 'agent',
-      senderUserId: get().currentUser.id,
-      messageType: type,
-      content: text,
-      mediaUrl,
-      status: 'sent',
-      createdAt: timestamp,
+  sendMessage: async (conversationId, text, type = 'text', mediaUrl) => {
+    const typeMap = {
+      text: 1,
+      image: 2,
+      video: 3,
+      file: 4,
+      audio: 5,
+      sticker: 6
     };
+    const id__messages_types = typeMap[type] || 1;
 
-    // Update messages, last message preview in conversation, and outbound analytics count
-    set((state) => {
-      const updatedMessages = [...state.messages, newMsg];
-      const updatedConversations = state.conversations.map((c) => {
-        if (c.id === conversationId) {
-          return {
-            ...c,
-            lastMessagePreview: type === 'text' ? text : `[${type.toUpperCase()}] đính kèm`,
-            lastMessageAt: timestamp,
-          };
-        }
-        return c;
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: text,
+          id__messages_types,
+          media_url: mediaUrl,
+          sender_user_id: get().currentUser.id
+        })
       });
-
-      const updatedDashboard = {
-        ...state.dashboardStats,
-        todayOutbound: state.dashboardStats.todayOutbound + 1,
-        agentLeaderboard: state.dashboardStats.agentLeaderboard.map(agent => 
-          agent.id === get().currentUser.id 
-            ? { ...agent, messagesSent: agent.messagesSent + 1 }
-            : agent
-        )
-      };
-
-      return {
-        messages: updatedMessages,
-        conversations: updatedConversations,
-        dashboardStats: updatedDashboard,
-      };
-    });
-
-    // Emulate mock auto-reply from customer after 1.5 seconds
-    setTimeout(() => {
-      const currentConv = get().conversations.find((c) => c.id === conversationId);
-      if (!currentConv) return;
-      const contact = get().contacts.find((ct) => ct.id === currentConv.contactId);
-      const customerName = contact ? contact.name : 'Khách hàng';
-
-      const replies = [
-        'Dạ vâng, cảm ơn shop đã tư vấn ạ.',
-        'Mẫu này chất liệu gì vậy shop?',
-        'Dạ em đã nhận được tin nhắn, shop phản hồi nhanh quá.',
-        'Shop ship COD cho em về địa chỉ cũ nha.',
-        'Sản phẩm này có được bảo hành đổi trả trong 7 ngày không shop?',
-        'Để em suy nghĩ thêm rồi báo lại shop sau nha.',
-      ];
-      
-      const randomReply = replies[Math.floor(Math.random() * replies.length)];
-      const autoReplyId = `m-reply-${Date.now()}`;
-      const replyTimestamp = new Date().toISOString();
-
-      const replyMsg: Message = {
-        id: autoReplyId,
-        conversationId,
-        senderType: 'customer',
-        messageType: 'text',
-        content: randomReply,
-        status: 'delivered',
-        createdAt: replyTimestamp,
-      };
-
-      set((state) => {
-        const updatedMessages = [...state.messages, replyMsg];
-        const isActive = state.activeConversationId === conversationId;
-        
-        const updatedConversations = state.conversations.map((c) => {
-          if (c.id === conversationId) {
-            return {
-              ...c,
-              lastMessagePreview: randomReply,
-              lastMessageAt: replyTimestamp,
-              unreadCount: isActive ? 0 : c.unreadCount + 1,
-            };
-          }
-          return c;
-        });
-
-        const updatedDashboard = {
-          ...state.dashboardStats,
-          todayInbound: state.dashboardStats.todayInbound + 1,
-        };
-
-        return {
-          messages: updatedMessages,
-          conversations: updatedConversations,
-          dashboardStats: updatedDashboard,
-        };
-      });
-    }, 1500);
+      const result = await response.json();
+      if (result.success) {
+        // Refresh messages and conversations from the database to reflect the update
+        await get().fetchMessages(conversationId);
+        await get().fetchConversations(get().activeChannelId);
+      }
+    } catch (error) {
+      console.error('Failed to send message via API:', error);
+    }
   },
 
   assignAgent: (conversationId, agentId) => {
@@ -203,21 +220,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return c;
       });
 
-      // Update Dashboard Leaderboard logic
-      const updatedDashboard = {
-        ...state.dashboardStats,
-        agentLeaderboard: state.dashboardStats.agentLeaderboard.map(agent => {
-          const activeChatsCount = updatedConversations.filter(c => c.assignedUserId === agent.id && c.status !== 'closed').length;
-          return {
-            ...agent,
-            chatsHandled: activeChatsCount + 10 // Mock baseline + current active
-          };
-        })
-      };
-
       return { 
-        conversations: updatedConversations,
-        dashboardStats: updatedDashboard
+        conversations: updatedConversations
       };
     });
   },
@@ -231,19 +235,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return c;
       });
 
-      // Update dashboard stats open/pending counts
-      const openCount = updatedConversations.filter(c => c.status === 'open').length;
-      const pendingCount = updatedConversations.filter(c => c.status === 'pending').length;
-
-      const updatedDashboard = {
-        ...state.dashboardStats,
-        openConversations: openCount,
-        pendingConversations: pendingCount,
-      };
-
       return {
-        conversations: updatedConversations,
-        dashboardStats: updatedDashboard,
+        conversations: updatedConversations
       };
     });
   },
