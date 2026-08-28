@@ -1,0 +1,170 @@
+-- 1. Khởi tạo Schema
+CREATE SCHEMA IF NOT EXISTS notification;
+SET search_path TO notification;
+
+
+-- =========================================================
+-- KHỐI 1: CÁC BẢNG CON (ĐỊNH DẠNG: <bảng cha>_<bảng con>)
+-- =========================================================
+
+-- Bảng con của users: Vai trò / Quyền hạn
+CREATE TABLE notification.users_roles (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+);
+INSERT INTO notification.users_roles (name) VALUES 
+('admin'), ('supervisor'), ('agent');
+
+-- Bảng con của channels: Nền tảng kết nối
+CREATE TABLE notification.channels_platforms (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+);
+INSERT INTO notification.channels_platforms (name) VALUES 
+('facebook'), ('zalo'), ('telegram'), ('tiktok'), ('livechat');
+
+-- Bảng con của conversations: Trạng thái hội thoại
+CREATE TABLE notification.conversations_statuses (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+);
+INSERT INTO notification.conversations_statuses (name) VALUES 
+('open'), ('pending'), ('resolved'), ('closed');
+
+-- Bảng con của messages: Loại người gửi
+CREATE TABLE notification.messages_sender_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+);
+INSERT INTO notification.messages_sender_types (name) VALUES 
+('customer'), ('agent'), ('bot'), ('system');
+
+-- Bảng con của messages: Định dạng tin nhắn
+CREATE TABLE notification.messages_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+);
+INSERT INTO notification.messages_types (name) VALUES 
+('text'), ('image'), ('video'), ('file'), ('audio'), ('sticker');
+
+-- Bảng con của messages: Trạng thái gửi tin
+CREATE TABLE notification.messages_statuses (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+);
+INSERT INTO notification.messages_statuses (name) VALUES 
+('pending'), ('sent'), ('delivered'), ('read'), ('failed');
+
+-- =========================================================
+-- KHỐI 2: CÁC BẢNG CHÍNH (KHÓA NGOẠI DẠNG: id__<bảng_cha>_<bảng_con>)
+-- =========================================================
+
+-- 1. Bảng Users (Nhân viên)
+CREATE TABLE notification.users (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    id__users_roles INT NOT NULL DEFAULT 3 REFERENCES notification.users_roles(id),
+    avatar_url TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Bảng Channels (Kênh kết nối - Cột 1)
+CREATE TABLE notification.channels (
+    id BIGSERIAL PRIMARY KEY,
+    id__channels_platforms INT NOT NULL REFERENCES notification.channels_platforms(id),
+    name VARCHAR(255) NOT NULL,
+    external_channel_id VARCHAR(255) NOT NULL,
+    access_token TEXT,
+    refresh_token TEXT,
+    token_expires_at TIMESTAMPTZ,
+    avatar_url TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_channels_platform_external UNIQUE (id__channels_platforms, external_channel_id)
+);
+
+-- 3. Bảng Contacts (Khách hàng)
+CREATE TABLE notification.contacts (
+    id BIGSERIAL PRIMARY KEY,
+    channel_id BIGINT NOT NULL REFERENCES notification.channels(id) ON DELETE CASCADE,
+    external_user_id VARCHAR(255) NOT NULL,
+    name VARCHAR(255),
+    avatar_url TEXT,
+    phone VARCHAR(20),
+    email VARCHAR(255),
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_contacts_channel_external UNIQUE (channel_id, external_user_id)
+);
+
+-- 4. Bảng Conversations (Bong bóng chat / Hội thoại - Cột 2)
+CREATE TABLE notification.conversations (
+    id BIGSERIAL PRIMARY KEY,
+    channel_id BIGINT NOT NULL REFERENCES notification.channels(id) ON DELETE CASCADE,
+    contact_id BIGINT NOT NULL REFERENCES notification.contacts(id) ON DELETE CASCADE,
+    assigned_user_id BIGINT REFERENCES notification.users(id) ON DELETE SET NULL,
+    id__conversations_statuses INT NOT NULL DEFAULT 1 REFERENCES notification.conversations_statuses(id),
+    last_message_preview TEXT,
+    last_message_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    unread_count INT DEFAULT 0,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_conversations_channel_contact UNIQUE (channel_id, contact_id)
+);
+
+-- 5. Bảng Messages (Từng tin nhắn & lưu Agent nào gửi - Cột 3)
+CREATE TABLE notification.messages (
+    id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES notification.conversations(id) ON DELETE CASCADE,
+    id__messages_sender_types INT NOT NULL REFERENCES notification.messages_sender_types(id),
+    sender_user_id BIGINT REFERENCES notification.users(id) ON DELETE SET NULL,
+    id__messages_types INT NOT NULL DEFAULT 1 REFERENCES notification.messages_types(id),
+    content TEXT,
+    media_url TEXT,
+    payload JSONB DEFAULT '{}'::jsonb,
+    external_message_id VARCHAR(255),
+    id__messages_statuses INT NOT NULL DEFAULT 2 REFERENCES notification.messages_statuses(id),
+    error_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =========================================================
+-- KHỐI 3: INDEX & TRIGGER
+-- =========================================================
+
+CREATE INDEX idx_conversations_channel_time ON notification.conversations (channel_id, last_message_at DESC);
+CREATE INDEX idx_messages_conversation_time ON notification.messages (conversation_id, created_at ASC);
+CREATE UNIQUE INDEX idx_messages_prevent_dup ON notification.messages (conversation_id, external_message_id)
+WHERE external_message_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION notification.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_users_updated_at 
+BEFORE UPDATE ON notification.users 
+FOR EACH ROW EXECUTE FUNCTION notification.update_updated_at_column();
+
+CREATE TRIGGER trg_channels_updated_at 
+BEFORE UPDATE ON notification.channels 
+FOR EACH ROW EXECUTE FUNCTION notification.update_updated_at_column();
+
+CREATE TRIGGER trg_contacts_updated_at 
+BEFORE UPDATE ON notification.contacts 
+FOR EACH ROW EXECUTE FUNCTION notification.update_updated_at_column();
+
+CREATE TRIGGER trg_conversations_updated_at 
+BEFORE UPDATE ON notification.conversations 
+FOR EACH ROW EXECUTE FUNCTION notification.update_updated_at_column();
