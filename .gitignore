@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# session and auth data
+whatsapp_auth/
+test_wa_auth/
+zalo_auth/
+*_auth/
+*.session*
+/public/uploads/

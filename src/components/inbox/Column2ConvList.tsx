@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Search, Filter, MessageSquareDashed } from 'lucide-react';
+import { Search, Filter, MessageSquareDashed, PanelLeftOpen } from 'lucide-react';
 import { useChatStore } from '../../store/useChatStore';
 import { formatRelativeTime } from '../../lib/utils';
 import { PLATFORMS } from '../../lib/constants';
@@ -18,14 +18,24 @@ export default function Column2ConvList() {
     setSearchQuery,
     statusFilter,
     setStatusFilter,
+    isSidebarOpen,
+    toggleSidebar,
   } = useChatStore();
 
   // Handle Search & Filter computation
   const filteredConversations = useMemo(() => {
     return conversations
       .filter((c) => {
-        // 1. Filter by Channel
-        if (activeChannelId && c.channelId !== activeChannelId) return false;
+        // 1. Filter by Channel or Platform Group
+        if (activeChannelId) {
+          if (activeChannelId.startsWith('platform:')) {
+            const targetPlatform = activeChannelId.replace('platform:', '');
+            const convChannel = channels.find((ch) => ch.id === c.channelId);
+            if (!convChannel || convChannel.platform !== targetPlatform) return false;
+          } else if (c.channelId !== activeChannelId) {
+            return false;
+          }
+        }
         
         // Find corresponding contact
         const contact = contacts.find((ct) => ct.id === c.contactId);
@@ -58,15 +68,26 @@ export default function Column2ConvList() {
     <section className="w-80 border-r border-border bg-card flex flex-col h-full shrink-0 select-none">
       {/* Search Header */}
       <div className="p-4 border-b border-border space-y-3">
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Tìm theo tên, SĐT khách..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-border rounded-xl bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
-          />
+        <div className="flex items-center gap-2">
+          {!isSidebarOpen && (
+            <button
+              onClick={toggleSidebar}
+              className="p-2 rounded-xl border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-all shadow-sm shrink-0 cursor-pointer"
+              title="Mở thanh kênh (Ctrl+B)"
+            >
+              <PanelLeftOpen className="w-4 h-4 text-primary" />
+            </button>
+          )}
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Tìm theo tên, SĐT khách..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 border border-border rounded-xl bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
+            />
+          </div>
         </div>
 
         {/* Tab Filters */}
@@ -109,7 +130,7 @@ export default function Column2ConvList() {
             const channel = channels.find((ch) => ch.id === c.channelId);
             if (!contact) return null;
 
-            const platformConfig = channel ? PLATFORMS[channel.platform] : PLATFORMS.livechat;
+            const platformConfig = (channel && PLATFORMS[channel.platform]) || PLATFORMS.livechat;
             const isActive = activeConversationId === c.id;
 
             return (
@@ -151,11 +172,18 @@ export default function Column2ConvList() {
                       {formatRelativeTime(c.lastMessageAt)}
                     </span>
                   </div>
-                  <p className={`text-[11px] truncate leading-normal ${
-                    c.unreadCount > 0 ? 'text-foreground font-semibold' : 'text-muted-foreground'
-                  }`}>
-                    {c.lastMessagePreview || 'Chưa có tin nhắn'}
-                  </p>
+                  {c.isTyping ? (
+                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5 animate-pulse">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                      💬 Đang soạn tin...
+                    </span>
+                  ) : (
+                    <p className={`text-[11px] truncate leading-normal ${
+                      c.unreadCount > 0 ? 'text-foreground font-semibold' : 'text-muted-foreground'
+                    }`}>
+                      {c.lastMessagePreview || 'Chưa có tin nhắn'}
+                    </p>
+                  )}
                 </div>
 
                 {/* Unread Counter Badge / Status Dot */}

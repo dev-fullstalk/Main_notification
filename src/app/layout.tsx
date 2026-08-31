@@ -1,21 +1,20 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Roboto } from 'next/font/google';
 import './globals.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-mono',
-  subsets: ['latin'],
+const roboto = Roboto({
+  weight: ['300', '400', '500', '700'],
+  subsets: ['latin', 'vietnamese'],
+  variable: '--font-roboto',
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
   title: 'TX Omnichannel Central Inbox - Trung tâm quản trị tin nhắn đa nền tảng',
-  description: 'Hệ thống quản lý tin nhắn đa kênh (Facebook, Zalo, Telegram, TikTok Shop) tập trung.',
+  description: 'Hệ thống quản lý tin nhắn đa kênh (Facebook, Zalo, Telegram, WhatsApp) tập trung.',
 };
+
+import SyncAutoStarter from '@/components/common/SyncAutoStarter';
 
 export default function RootLayout({
   children,
@@ -25,9 +24,12 @@ export default function RootLayout({
   return (
     <html
       lang="vi"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${roboto.variable} font-sans h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col font-sans">
+        <SyncAutoStarter />
+        {children}
+      </body>
     </html>
   );
 }

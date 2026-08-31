@@ -10,7 +10,8 @@ export const conversationRepo = {
              cont.phone as contact_phone, 
              cont.email as contact_email,
              cont.external_user_id as contact_external_user_id,
-             s.name as status
+             s.name as status,
+             (conv.is_typing = true AND conv.typing_updated_at > CURRENT_TIMESTAMP - INTERVAL '6 seconds') as is_typing
       FROM conversations conv
       JOIN contacts cont ON conv.contact_id = cont.id
       JOIN conversations_statuses s ON conv.id__conversations_statuses = s.id
@@ -28,12 +29,21 @@ export const conversationRepo = {
              cont.phone as contact_phone, 
              cont.email as contact_email,
              cont.external_user_id as contact_external_user_id,
-             s.name as status
+             s.name as status,
+             (conv.is_typing = true AND conv.typing_updated_at > CURRENT_TIMESTAMP - INTERVAL '6 seconds') as is_typing
       FROM conversations conv
       JOIN contacts cont ON conv.contact_id = cont.id
       JOIN conversations_statuses s ON conv.id__conversations_statuses = s.id
       ORDER BY conv.last_message_at DESC
     `);
     return rows;
+  },
+
+  async markAsRead(conversationId: string | number): Promise<void> {
+    await query(`
+      UPDATE conversations
+      SET unread_count = 0
+      WHERE id = $1
+    `, [conversationId]);
   }
 };

@@ -28,95 +28,110 @@ export default function MessageBubble({ message, contact, agent }: MessageBubble
   }
 
   return (
-    <div className={`flex gap-3 my-4 ${isAgent ? 'justify-end' : 'justify-start'}`}>
-      {/* Customer Avatar on Left */}
+    <div className={`flex gap-2 my-1.5 ${isAgent ? 'justify-end' : 'justify-start items-end'}`}>
+      {/* Customer Avatar on Left (Bottom-aligned with bubble) */}
       {!isAgent && (
         <img
           src={contact.avatarUrl}
           alt={contact.name}
-          className="w-8 h-8 rounded-full border border-border shrink-0 self-end shadow-sm"
+          className="w-7 h-7 rounded-full border border-slate-200/80 shrink-0 self-end shadow-2xs bg-white mb-0.5 object-cover"
         />
       )}
 
       {/* Bubble Container */}
-      <div className="max-w-[70%] flex flex-col">
+      <div className={`max-w-[70%] w-fit flex flex-col ${isAgent ? 'items-end' : 'items-start'}`}>
         {/* Agent Sender Name */}
         {isAgent && agent && (
-          <span className="text-[10px] text-muted-foreground mb-1 mr-1 text-right">
-            Gửi bởi: <strong className="font-semibold text-foreground">{agent.name}</strong>
+          <span className="text-[10px] text-slate-400 mb-0.5 mr-1 text-right font-medium">
+            {agent.name}
           </span>
         )}
 
         {/* Message Core Content Box */}
-        <div className={`p-3 rounded-2xl text-xs leading-relaxed shadow-sm ${
-          isAgent
-            ? 'bg-primary text-primary-foreground rounded-br-none'
-            : 'bg-muted dark:bg-neutral-800 text-foreground rounded-bl-none border border-border/50'
+        <div className={`w-fit max-w-full transition-all ${
+          message.mediaUrl && !(message.content && message.content !== '[Hình ảnh]' && message.content !== '[Tập tin/Hình ảnh]' && message.content !== '[Hình Ảnh/Tập tin]' && message.content !== '[Hình ảnh/GIF]')
+            ? 'p-0 bg-transparent shadow-none border-none'
+            : isAgent
+              ? 'px-3.5 py-2 rounded-[18px] bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs border border-slate-200/80 dark:border-slate-700/80'
+              : 'px-3.5 py-2 rounded-[18px] bg-[#1a73e8] text-white shadow-xs'
         }`}>
-          {/* 1. IMAGE TYPE */}
-          {message.messageType === 'image' && message.mediaUrl && (
-            <div className="space-y-1.5">
-              <img
+          {/* 1. MP4 / VIDEO / ANIMATED GIF TYPE */}
+          {message.mediaUrl && (message.mediaUrl.endsWith('.mp4') || message.mediaUrl.endsWith('.webm') || message.messageType === 'video') && (
+            <div className="space-y-1">
+              <video
                 src={message.mediaUrl}
-                alt="Hình ảnh đính kèm"
-                className="rounded-lg max-w-full max-h-60 object-cover shadow-sm hover:scale-[1.01] transition-transform cursor-pointer"
+                autoPlay
+                loop
+                muted
+                playsInline
+                controls
+                className="rounded-2xl max-w-full max-h-64 object-contain bg-black/10 shadow-xs"
               />
-              {message.content && <p>{message.content}</p>}
+              {message.content && message.content !== '[Hình ảnh]' && message.content !== '[Tập tin/Hình ảnh]' && message.content !== '[Hình Ảnh/Tập tin]' && message.content !== '[Hình ảnh/GIF]' && (
+                <p className="whitespace-pre-wrap text-[13px] px-1 py-0.5">{message.content}</p>
+              )}
             </div>
           )}
 
-          {/* 2. FILE TYPE */}
-          {message.messageType === 'file' && message.mediaUrl && (
-            <div className="flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                isAgent ? 'bg-white/20' : 'bg-primary/10 text-primary'
+          {/* 2. STATIC IMAGE / STICKER TYPE */}
+          {message.mediaUrl && !(message.mediaUrl.endsWith('.mp4') || message.mediaUrl.endsWith('.webm') || message.messageType === 'video' || message.mediaUrl.endsWith('.ogg') || message.mediaUrl.endsWith('.mp3') || message.messageType === 'file') && (
+            <div className="space-y-1">
+              <img
+                src={message.mediaUrl}
+                alt="Hình ảnh đính kèm"
+                className="rounded-2xl max-w-full max-h-64 object-contain bg-transparent shadow-xs hover:scale-[1.01] transition-transform cursor-pointer"
+              />
+              {message.content && message.content !== '[Hình ảnh]' && message.content !== '[Tập tin/Hình ảnh]' && message.content !== '[Hình Ảnh/Tập tin]' && (
+                <p className="whitespace-pre-wrap text-[13px] px-1 py-0.5">{message.content}</p>
+              )}
+            </div>
+          )}
+
+          {/* 3. AUDIO / VOICE TYPE */}
+          {message.mediaUrl && (message.mediaUrl.endsWith('.ogg') || message.mediaUrl.endsWith('.mp3') || message.messageType === 'audio') && (
+            <div className="space-y-1 py-0.5">
+              <audio src={message.mediaUrl} controls className="w-full h-8" />
+              {message.content && <p className="whitespace-pre-wrap text-[13px] px-1">{message.content}</p>}
+            </div>
+          )}
+
+          {/* 4. FILE / DOCUMENT TYPE */}
+          {message.mediaUrl && (message.messageType === 'file' || message.mediaUrl.endsWith('.pdf') || message.mediaUrl.endsWith('.docx') || message.mediaUrl.endsWith('.zip') || message.mediaUrl.endsWith('.bin') || message.mediaUrl.endsWith('.xlsx')) && (
+            <div className="flex items-center gap-2.5 py-0.5">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                isAgent ? 'bg-slate-100 dark:bg-slate-700 text-[#1a73e8]' : 'bg-white/20 text-white'
               }`}>
-                <FileText className="w-5 h-5" />
+                <FileText className="w-4 h-4" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-xs truncate">Tài liệu đính kèm.pdf</p>
-                <span className={`text-[10px] ${
-                  isAgent ? 'text-primary-foreground/75' : 'text-muted-foreground'
-                }`}>
-                  1.2 MB
-                </span>
+                <p className="font-medium text-xs truncate">{message.content && message.content !== '[Tài liệu]' && message.content !== '[Hình ảnh/Tập tin]' ? message.content : 'Tài liệu đính kèm'}</p>
               </div>
               <a
                 href={message.mediaUrl}
+                download
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`p-1.5 rounded-md hover:bg-black/10 transition-colors ${
-                  isAgent ? 'text-primary-foreground' : 'text-foreground'
+                className={`p-1 rounded-md hover:bg-black/10 transition-colors shrink-0 ${
+                  isAgent ? 'text-slate-600 dark:text-slate-300' : 'text-white'
                 }`}
-                title="Tải xuống"
+                title="Tải xuống tập tin"
               >
-                <Download className="w-4 h-4" />
+                <Download className="w-3.5 h-3.5" />
               </a>
             </div>
           )}
 
-          {/* 3. STANDARD TEXT */}
-          {message.messageType === 'text' && (
-            <p className="whitespace-pre-wrap">{message.content}</p>
+          {/* 5. STANDARD TEXT */}
+          {(!message.mediaUrl || message.messageType === 'text') && message.content && (
+            <p className="whitespace-pre-wrap text-[13px] font-normal tracking-normal leading-relaxed">{message.content}</p>
           )}
-
-          {/* Timestamp details */}
-          <div className={`text-[9px] mt-1 text-right leading-none ${
-            isAgent ? 'text-primary-foreground/70' : 'text-muted-foreground'
-          }`}>
-            {formatTimeOnly(message.createdAt)}
-          </div>
         </div>
-      </div>
 
-      {/* Agent Avatar on Right */}
-      {isAgent && (
-        <img
-          src={agent?.avatarUrl || 'https://api.dicebear.com/7.x/adventurer/svg?seed=agent'}
-          alt={agent?.name || 'Agent'}
-          className="w-8 h-8 rounded-full border border-border shrink-0 self-end bg-white shadow-sm"
-        />
-      )}
+        {/* Timestamp subtle note underneath */}
+        <span className={`text-[10px] mt-0.5 px-1 leading-none text-slate-400 dark:text-slate-500`}>
+          {formatTimeOnly(message.createdAt)}
+        </span>
+      </div>
     </div>
   );
 }

@@ -54,40 +54,120 @@ export const chatService = {
       try {
         const convDetails = await query(`
           SELECT c.id__channels_platforms, c.access_token, cont.external_user_id
-          FROM conversations conv
-          JOIN channels c ON conv.channel_id = c.id
-          JOIN contacts cont ON conv.contact_id = cont.id
+          FROM notification.conversations conv
+          JOIN notification.channels c ON conv.channel_id = c.id
+          JOIN notification.contacts cont ON conv.contact_id = cont.id
           WHERE conv.id = $1
         `, [conversationId]);
 
         if (convDetails.rows.length > 0) {
           const { id__channels_platforms, access_token, external_user_id } = convDetails.rows[0];
           
-          // Telegram is platform 3
-          if (id__channels_platforms === 3 && access_token && external_user_id) {
-            console.log(`Sending outbound Telegram message to chat ${external_user_id}`);
-            const telegramUrl = `https://api.telegram.org/bot${access_token}/sendMessage`;
-            const response = await fetch(telegramUrl, {
+          // 1. Facebook Messenger is platform 1
+          const fbToken = access_token || process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
+          if (id__channels_platforms === 1 && fbToken && external_user_id) {
+            console.log(`🚀 Đang gửi tin nhắn Facebook Messenger tới: ${external_user_id}`);
+            const fbUrl = `https://graph.facebook.com/v19.0/me/messages?access_token=${fbToken}`;
+            
+            let fbBody: any = {
+              recipient: { id: external_user_id },
+              messaging_type: 'RESPONSE',
+            };
+
+            if (mediaUrl) {
+              const attType = messageType === 'image' ? 'image' : messageType === 'video' ? 'video' : messageType === 'audio' ? 'audio' : 'file';
+              fbBody.message = {
+                attachment: {
+                  type: attType,
+                  payload: { url: mediaUrl, is_reusable: true }
+                }
+              };
+            } else {
+              fbBody.message = { text: content || '' };
+            }
+
+            const response = await fetch(fbUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: external_user_id,
-                text: content || ''
-              })
+              body: JSON.stringify(fbBody)
             });
             const result = await response.json();
-            if (result.ok) {
-              externalMessageId = result.result?.message_id ? String(result.result.message_id) : null;
+            if (result.message_id) {
+              externalMessageId = String(result.message_id);
               statusId = 3; // Delivered
-              console.log(`Telegram message sent successfully. Msg ID: ${externalMessageId}`);
+              console.log(`✅ Tin nhắn Facebook đã gửi thành công tới khách hàng! Msg ID: ${externalMessageId}`);
             } else {
-              console.error(`Telegram API error: ${result.description}`);
+              console.error(`❌ Lỗi gửi tin nhắn qua Facebook Graph API:`, result.error);
               statusId = 5; // Failed
+            }
+          }
+
+          // 2. Telegram is platform 3 (Support both Bot and Personal Account Session)
+          if (id__channels_platforms === 3 && external_user_id) {
+            console.log(`🚀 Đang gửi tin nhắn Telegram tới đối tác ID: ${external_user_id}`);
+            
+            // Trường hợp 1: Có Bot Token
+            if (access_token) {
+              const telegramUrl = `https://api.telegram.org/bot${access_token}/sendMessage`;
+              const response = await fetch(telegramUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: external_user_id,
+                  text: content || ''
+                })
+              });
+              const result = await response.json();
+              if (result.ok) {
+                externalMessageId = result.result?.message_id ? String(result.result.message_id) : null;
+                statusId = 3; // Delivered
+                console.log(`✅ Telegram Bot đã gửi tin nhắn thành công. Msg ID: ${externalMessageId}`);
+              } else {
+                console.error(`❌ Lỗi Telegram Bot API: ${result.description}`);
+                statusId = 5; // Failed
+              }
+            } 
+            // Trường hợp 2: Tài khoản Telegram Cá nhân (MTProto Session)
+            else {
+              const teleSession = process.env.TELEGRAM_USER_SESSION || '';
+              if (teleSession) {
+                try {
+                  const { TelegramClient } = await import('telegram');
+                  const { StringSession } = await import('telegram/sessions');
+                  const apiId = Number(process.env.TELEGRAM_API_ID) || 38802670;
+                  const apiHash = process.env.TELEGRAM_API_HASH || '245dbf5bc61c0590b473fb31747bb198';
+
+                  const client = new TelegramClient(new StringSession(teleSession), apiId, apiHash, {
+                    connectionRetries: 3,
+                  });
+                  await client.connect();
+
+                  // Chuẩn bị entity gửi (BigInt ID nếu là số)
+                  let peer: any = external_user_id;
+                  if (/^-?\d+$/.test(external_user_id)) {
+                    peer = BigInt(external_user_id);
+                  }
+
+                  const sentMsg = await client.sendMessage(peer, {
+                    message: content || '',
+                  });
+
+                  externalMessageId = String(sentMsg.id);
+                  statusId = 3; // Delivered
+                  console.log(`✅ Đã gửi tin nhắn thành công qua Telegram Cá Nhân của Sếp! Msg ID: ${externalMessageId}`);
+                  await client.disconnect();
+                } catch (mtErr: any) {
+                  console.error('❌ Lỗi gửi tin nhắn qua Telegram Cá nhân:', mtErr.message);
+                  statusId = 5; // Failed
+                }
+              } else {
+                console.warn('⚠️ Chưa cấu hình TELEGRAM_USER_SESSION trong .ENV');
+              }
             }
           }
         }
       } catch (dbErr: any) {
-        console.warn('Failed to fetch conversation channel details or dispatch Telegram API message:', dbErr.message);
+        console.warn('Failed to fetch conversation channel details or dispatch API message:', dbErr.message);
       }
 
       return await messageRepo.create(

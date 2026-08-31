@@ -6,7 +6,7 @@ export interface DbUserRole {
 
 export interface DbChannelPlatform {
   id: number;
-  name: 'facebook' | 'zalo' | 'telegram' | 'tiktok' | 'livechat';
+  name: 'facebook' | 'zalo' | 'telegram' | 'whatsapp' | 'livechat';
 }
 
 export interface DbConversationStatus {
