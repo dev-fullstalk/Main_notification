@@ -1,6 +1,6 @@
 export interface Channel {
   id: string;
-  platform: 'facebook' | 'zalo' | 'telegram' | 'tiktok' | 'livechat';
+  platform: 'facebook' | 'zalo' | 'telegram' | 'whatsapp' | 'livechat';
   name: string;
   externalChannelId: string;
   avatarUrl?: string;

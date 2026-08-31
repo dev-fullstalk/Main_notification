@@ -24,14 +24,14 @@ export default function InboxPage() {
     fetchConversations(activeChannelId);
   }, []);
 
-  // Polling to sync database updates (new conversations/messages from Telegram Bot Webhook)
+  // Polling to sync database updates (new conversations/messages/typing events)
   useEffect(() => {
     const interval = setInterval(() => {
       fetchConversations(activeChannelId);
       if (activeConversationId) {
         fetchMessages(activeConversationId);
       }
-    }, 2500);
+    }, 1200);
 
     return () => clearInterval(interval);
   }, [activeChannelId, activeConversationId]);

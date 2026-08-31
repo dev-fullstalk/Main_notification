@@ -8,10 +8,10 @@ import AgentLeaderboard from '../../components/dashboard/AgentLeaderboard';
 import ChannelCard from '../../components/channels/ChannelCard';
 import ConnectModal from '../../components/channels/ConnectModal';
 import { useChatStore } from '../../store/useChatStore';
-import { Plus, Link2 } from 'lucide-react';
+import { Plus, Link2, PanelLeftOpen } from 'lucide-react';
 
 export default function DashboardPage() {
-  const channels = useChatStore((state) => state.channels);
+  const { channels, isSidebarOpen, toggleSidebar } = useChatStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
@@ -23,19 +23,23 @@ export default function DashboardPage() {
       <main className="flex-1 flex flex-col h-full overflow-y-auto custom-scrollbar bg-slate-50/40 dark:bg-slate-900/5 p-6 space-y-6">
         {/* Page Title Header */}
         <div className="flex items-center justify-between pb-4 border-b border-border">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Hệ thống Quản lý và Phân tích hiệu suất</h1>
-            <p className="text-xs text-muted-foreground mt-1">
-              Báo cáo tổng lượng tin nhắn, hiệu suất làm việc của đội ngũ trực chat và quản lý kết nối kênh.
-            </p>
+          <div className="flex items-center gap-3">
+            {!isSidebarOpen && (
+              <button
+                onClick={toggleSidebar}
+                className="p-2 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all shadow-sm shrink-0 cursor-pointer"
+                title="Mở thanh kênh (Ctrl+B)"
+              >
+                <PanelLeftOpen className="w-5 h-5 text-primary" />
+              </button>
+            )}
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">Hệ thống Quản lý và Phân tích hiệu suất</h1>
+              <p className="text-xs text-muted-foreground mt-1">
+                Báo cáo tổng lượng tin nhắn, hiệu suất làm việc của đội ngũ trực chat và quản lý kết nối kênh.
+              </p>
+            </div>
           </div>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-primary text-primary-foreground rounded-xl hover:bg-primary/95 transition-all shadow-md shadow-primary/20 scale-100 hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <Plus className="w-4 h-4" />
-            Kết nối Kênh mới
-          </button>
         </div>
 
         {/* Section 1: KPI Metrics Row */}

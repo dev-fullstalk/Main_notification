@@ -7,6 +7,7 @@ export interface Conversation {
   lastMessagePreview?: string;
   lastMessageAt: string;
   unreadCount: number;
+  isTyping?: boolean;
   metadata?: Record<string, any>;
   createdAt?: string;
   updatedAt?: string;
