@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 // Load .ENV file explicitly from root directory
-dotenv.config({ path: path.resolve(process.cwd(), '.ENV') });
+dotenv.config({ path: path.resolve(process.cwd(), '.ENV'), quiet: true });
 
 const host = process.env.DB_HOST || '127.0.0.1';
 const port = parseInt(process.env.DB_PORT || '5433');
@@ -28,15 +28,21 @@ export async function query(text: string, params?: any[]) {
   return pool.query(text, params);
 }
 
-// Test connection on load
-pool.connect()
-  .then((client) => {
-    console.log('PostgreSQL connection pool established for schema: notification');
-    client.release();
-  })
-  .catch((err) => {
-    console.warn(
-      `Database connection failed: host=${host}, port=${port}, user=${user}. ` +
-      `Ensure PostgreSQL Docker container is running. System will use mock fallback. Error: ${err.message}`
-    );
-  });
+// Test connection on load (only once globally to avoid console noise)
+declare global {
+  var __pgPoolTested: boolean | undefined;
+}
+
+if (!globalThis.__pgPoolTested) {
+  globalThis.__pgPoolTested = true;
+  pool.connect()
+    .then((client) => {
+      client.release();
+    })
+    .catch((err) => {
+      console.warn(
+        `[Database] Connection failed: host=${host}, port=${port}, user=${user}. ` +
+        `Ensure PostgreSQL is running. Error: ${err.message}`
+      );
+    });
+}

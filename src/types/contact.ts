@@ -6,6 +6,7 @@ export interface Contact {
   avatarUrl?: string;
   phone?: string;
   email?: string;
+  isGroup?: boolean;
   metadata?: Record<string, any>;
   createdAt?: string;
   updatedAt?: string;

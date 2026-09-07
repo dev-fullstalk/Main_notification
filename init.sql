@@ -115,6 +115,8 @@ CREATE TABLE notification.conversations (
     last_message_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     unread_count INT DEFAULT 0,
     metadata JSONB DEFAULT '{}'::jsonb,
+    is_typing BOOLEAN DEFAULT FALSE,
+    typing_updated_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_conversations_channel_contact UNIQUE (channel_id, contact_id)
@@ -134,6 +136,15 @@ CREATE TABLE notification.messages (
     id__messages_statuses INT NOT NULL DEFAULT 2 REFERENCES notification.messages_statuses(id),
     error_message TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 6. Bảng Outbound Typing (Lưu trạng thái agent đang gõ để đồng bộ ra ngoài)
+CREATE TABLE notification.outbound_typing (
+    channel_id BIGINT NOT NULL REFERENCES notification.channels(id) ON DELETE CASCADE,
+    external_user_id VARCHAR(255) NOT NULL,
+    is_typing BOOLEAN DEFAULT FALSE,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_outbound_typing UNIQUE (channel_id, external_user_id)
 );
 
 -- =========================================================
@@ -168,3 +179,77 @@ FOR EACH ROW EXECUTE FUNCTION notification.update_updated_at_column();
 CREATE TRIGGER trg_conversations_updated_at 
 BEFORE UPDATE ON notification.conversations 
 FOR EACH ROW EXECUTE FUNCTION notification.update_updated_at_column();
+
+-- =========================================================
+-- KHỐI 4: REAL-TIME NOTIFICATION TRIGGERS (LISTEN / NOTIFY)
+-- =========================================================
+
+CREATE OR REPLACE FUNCTION notification.notify_chat_events()
+RETURNS TRIGGER AS $$
+DECLARE
+    payload JSON;
+BEGIN
+    IF (TG_TABLE_NAME = 'messages') THEN
+        payload = json_build_object(
+            'event', 'new_message',
+            'data', json_build_object(
+                'id', NEW.id,
+                'conversation_id', NEW.conversation_id,
+                'id__messages_sender_types', NEW.id__messages_sender_types,
+                'sender_type', CASE WHEN NEW.id__messages_sender_types = 1 THEN 'customer' ELSE 'agent' END,
+                'sender_user_id', NEW.sender_user_id,
+                'id__messages_types', NEW.id__messages_types,
+                'message_type', CASE 
+                    WHEN NEW.id__messages_types = 2 THEN 'image'
+                    WHEN NEW.id__messages_types = 3 THEN 'video'
+                    WHEN NEW.id__messages_types = 4 THEN 'file'
+                    WHEN NEW.id__messages_types = 5 THEN 'audio'
+                    WHEN NEW.id__messages_types = 6 THEN 'sticker'
+                    ELSE 'text'
+                END,
+                'content', NEW.content,
+                'media_url', NEW.media_url,
+                'external_message_id', NEW.external_message_id,
+                'status', CASE WHEN NEW.id__messages_statuses = 3 THEN 'delivered' WHEN NEW.id__messages_statuses = 4 THEN 'read' ELSE 'sent' END,
+                'created_at', NEW.created_at
+            )
+        );
+        PERFORM pg_notify('chat_realtime', payload::text);
+    ELSIF (TG_TABLE_NAME = 'conversations') THEN
+        IF (
+            OLD.last_message_preview IS DISTINCT FROM NEW.last_message_preview OR
+            OLD.last_message_at IS DISTINCT FROM NEW.last_message_at OR
+            OLD.unread_count IS DISTINCT FROM NEW.unread_count OR
+            OLD.is_typing IS DISTINCT FROM NEW.is_typing
+        ) THEN
+            payload = json_build_object(
+                'event', 'conversation_updated',
+                'data', json_build_object(
+                    'id', NEW.id,
+                    'channel_id', NEW.channel_id,
+                    'last_message_preview', NEW.last_message_preview,
+                    'last_message_at', NEW.last_message_at,
+                    'unread_count', NEW.unread_count,
+                    'is_typing', CASE 
+                        WHEN NEW.is_typing = true AND (NEW.typing_updated_at IS NULL OR NEW.typing_updated_at < CURRENT_TIMESTAMP - INTERVAL '6 seconds') THEN false
+                        ELSE NEW.is_typing
+                    END
+                )
+            );
+            PERFORM pg_notify('chat_realtime', payload::text);
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_messages_notify ON notification.messages;
+CREATE TRIGGER trg_messages_notify
+AFTER INSERT ON notification.messages
+FOR EACH ROW EXECUTE FUNCTION notification.notify_chat_events();
+
+DROP TRIGGER IF EXISTS trg_conversations_notify ON notification.conversations;
+CREATE TRIGGER trg_conversations_notify
+AFTER UPDATE ON notification.conversations
+FOR EACH ROW EXECUTE FUNCTION notification.notify_chat_events();
