@@ -10,6 +10,7 @@ export const conversationRepo = {
              cont.phone as contact_phone, 
              cont.email as contact_email,
              cont.external_user_id as contact_external_user_id,
+             cont.metadata as contact_metadata,
              s.name as status,
              (conv.is_typing = true AND conv.typing_updated_at > CURRENT_TIMESTAMP - INTERVAL '6 seconds') as is_typing
       FROM conversations conv
@@ -29,6 +30,7 @@ export const conversationRepo = {
              cont.phone as contact_phone, 
              cont.email as contact_email,
              cont.external_user_id as contact_external_user_id,
+             cont.metadata as contact_metadata,
              s.name as status,
              (conv.is_typing = true AND conv.typing_updated_at > CURRENT_TIMESTAMP - INTERVAL '6 seconds') as is_typing
       FROM conversations conv

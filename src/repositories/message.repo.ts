@@ -29,7 +29,8 @@ export const messageRepo = {
     content: string | null,
     mediaUrl?: string | null,
     externalMessageId?: string | null,
-    statusId: number = 2
+    statusId: number = 2,
+    payload: any = {}
   ): Promise<any> {
     // Insert new message
     const { rows } = await query(`
@@ -41,9 +42,10 @@ export const messageRepo = {
         content, 
         media_url, 
         external_message_id,
-        id__messages_statuses
+        id__messages_statuses,
+        payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `, [
       conversationId,
@@ -53,7 +55,8 @@ export const messageRepo = {
       content || null,
       mediaUrl || null,
       externalMessageId || null,
-      statusId
+      statusId,
+      JSON.stringify(payload || {})
     ]);
 
     // Format last message preview string based on type

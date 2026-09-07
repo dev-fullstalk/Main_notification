@@ -48,8 +48,6 @@ export async function POST(request: Request) {
       createdAt: new Date().toISOString(),
     };
 
-    console.log('Outbound message sent via API:', outboundMessage);
-
     return NextResponse.json({
       success: true,
       message: 'Message dispatched successfully',

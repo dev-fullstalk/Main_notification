@@ -57,7 +57,8 @@ export async function POST(request: Request) {
       default: makeWASocket, 
       useMultiFileAuthState, 
       DisconnectReason,
-      Browsers 
+      Browsers,
+      fetchLatestBaileysVersion
     } = await import('@whiskeysockets/baileys');
     const pino = (await import('pino')).default;
 
@@ -84,18 +85,22 @@ export async function POST(request: Request) {
       phone: phoneNumber,
     };
 
+    const { version } = await fetchLatestBaileysVersion();
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
     const initSocket = () => {
       const sock = makeWASocket({
+        version,
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: 'silent' }),
-        browser: Browsers.ubuntu('Chrome'),
+        browser: Browsers.macOS('Desktop'),
         syncFullHistory: false,
         connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
         keepAliveIntervalMs: 25000,
       });
+
 
       global.__waPairSocket = sock;
 

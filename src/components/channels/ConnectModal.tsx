@@ -604,7 +604,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                   telegramMode === 'qr' ? 'bg-card text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                ⭐ Quét mã QR
+                Quét mã QR
               </button>
               <button
                 type="button"
@@ -637,7 +637,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                     <div>
                       <h4 className="text-base font-bold">Đã kết nối Telegram thành công!</h4>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Tài khoản: <strong>{telegramUser?.name || 'Telegram Sếp'}</strong> {telegramUser?.username && `(@${telegramUser.username})`}
+                        Tài khoản: <strong>{telegramUser?.name || 'Telegram'}</strong> {telegramUser?.username && `(@${telegramUser.username})`}
                       </p>
                     </div>
                     <button type="button" onClick={onClose} className="w-full py-2.5 bg-primary text-primary-foreground font-semibold text-xs rounded-xl cursor-pointer">Hoàn tất & Đóng</button>
@@ -647,8 +647,8 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                     {teleQrImage ? (
                       <>
                         <div className="p-3 bg-sky-50/50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-800/40 rounded-xl text-xs text-sky-800 dark:text-sky-300 text-left animate-in fade-in space-y-1">
-                          <strong>📱 Hướng dẫn quét trên điện thoại:</strong>
-                          <p>Mở <strong>Telegram</strong> ➡️ <strong>Settings (Cài đặt)</strong> ➡️ <strong>Devices (Thiết bị)</strong> ➡️ <strong>Link Desktop Device</strong> và quét mã bên dưới:</p>
+                          <strong className="flex items-center gap-1.5"><Info className="w-3.5 h-3.5" /> Hướng dẫn quét trên điện thoại:</strong>
+                          <p>Mở <strong>Telegram</strong> &gt; <strong>Settings (Cài đặt)</strong> &gt; <strong>Devices (Thiết bị)</strong> &gt; <strong>Link Desktop Device</strong> và quét mã bên dưới:</p>
                         </div>
 
                         <div className="flex flex-col items-center justify-center p-4 bg-muted/40 rounded-2xl border border-border min-h-[220px]">
@@ -715,7 +715,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                 {telegramStep === 'phone' && (
                   <form onSubmit={handleSendTelegramCode} className="space-y-4">
                     <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800/40 rounded-xl text-xs text-blue-800 dark:text-blue-300">
-                      💡 <strong>Chuyển giao cho Sếp:</strong> Nhập số điện thoại Telegram của Sếp. Telegram sẽ gửi mã OTP trực tiếp vào app Telegram trên máy của Sếp.
+                      <strong>Hướng dẫn:</strong> Nhập số điện thoại Telegram của tài khoản cần liên kết. Mã xác nhận OTP sẽ được gửi trực tiếp vào ứng dụng Telegram trên thiết bị đó.
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
@@ -725,7 +725,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                         type="text"
                         value={channelName}
                         onChange={(e) => setChannelName(e.target.value)}
-                        placeholder="Ví dụ: Telegram Sếp Hải / CSKH 01"
+                        placeholder="Ví dụ: Telegram CSKH 01"
                         className="w-full px-3 py-2 border border-border rounded-xl bg-background text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                       />
                     </div>
@@ -774,7 +774,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                       </button>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Mã xác nhận OTP (Telegram gửi về máy Sếp)</label>
+                      <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Mã xác nhận OTP (Telegram gửi về thiết bị)</label>
                       <div className="relative">
                         <KeyRound className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
@@ -790,7 +790,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                     </div>
                     {(needsTwoFactor || tele2FA) && (
                       <div className="animate-in fade-in space-y-1">
-                        <label className="block text-xs font-semibold text-amber-600 dark:text-amber-400">🔒 Mật khẩu 2FA (Cloud Password)</label>
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400"><Lock className="w-3.5 h-3.5" /> Mật khẩu 2FA (Cloud Password)</label>
                         <div className="relative">
                           <Lock className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                           <input
@@ -803,6 +803,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                         </div>
                       </div>
                     )}
+
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>Không nhận được mã?</span>
                       {countdown > 0 ? <span>Gửi lại sau {countdown}s</span> : (
@@ -858,7 +859,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                   waMode === 'qr' ? 'bg-card text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                ⭐ Quét mã QR
+                Quét mã QR
               </button>
               <button
                 type="button"
@@ -881,7 +882,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                     </div>
                     <div>
                       <h4 className="text-base font-bold">Đã kết nối WhatsApp thành công!</h4>
-                      <p className="text-xs text-muted-foreground mt-1">Tài khoản WhatsApp: <strong>{waQrUser?.name || 'WhatsApp Sếp'}</strong> đã được liên kết.</p>
+                      <p className="text-xs text-muted-foreground mt-1">Tài khoản WhatsApp: <strong>{waQrUser?.name || 'WhatsApp'}</strong> đã được liên kết.</p>
                     </div>
                     <button type="button" onClick={onClose} className="w-full py-2.5 bg-primary text-primary-foreground font-semibold text-xs rounded-xl cursor-pointer">Hoàn tất & Đóng</button>
                   </div>
@@ -890,8 +891,8 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                     {waQrImage ? (
                       <>
                         <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 text-left animate-in fade-in space-y-1">
-                          <strong>📱 Hướng dẫn quét trên điện thoại:</strong>
-                          <p>Mở <strong>WhatsApp</strong> ➡️ <strong>Cài đặt (Settings)</strong> ➡️ <strong>Thiết bị liên kết (Linked Devices)</strong> ➡️ <strong>Liên kết thiết bị</strong> và quét mã bên dưới:</p>
+                          <strong className="flex items-center gap-1.5"><Info className="w-3.5 h-3.5" /> Hướng dẫn quét trên điện thoại:</strong>
+                          <p>Mở <strong>WhatsApp</strong> &gt; <strong>Cài đặt (Settings)</strong> &gt; <strong>Thiết bị liên kết (Linked Devices)</strong> &gt; <strong>Liên kết thiết bị</strong> và quét mã bên dưới:</p>
                         </div>
 
                         <div className="flex flex-col items-center justify-center p-4 bg-muted/40 rounded-2xl border border-border min-h-[220px]">
@@ -958,7 +959,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                 {waStep === 'phone' && (
                   <form onSubmit={handleRequestWaPairing} className="space-y-4">
                     <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40 rounded-xl text-xs text-emerald-800 dark:text-emerald-300">
-                      📱 <strong>Liên kết bằng Số điện thoại:</strong> Nhập SĐT WhatsApp của Sếp để nhận mã số liên kết 8 ký tự.
+                      <strong>Liên kết bằng Số điện thoại:</strong> Nhập số điện thoại WhatsApp để nhận mã số liên kết 8 ký tự.
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
@@ -988,7 +989,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                 {waStep === 'pairing_code' && (
                   <div className="space-y-4 animate-in fade-in">
                     <div className="text-center p-4 bg-muted/60 rounded-2xl border border-border">
-                      <span className="text-xs text-muted-foreground uppercase font-semibold tracking-wider">Mã liên kết WhatsApp của Sếp:</span>
+                      <span className="text-xs text-muted-foreground uppercase font-semibold tracking-wider">Mã liên kết WhatsApp:</span>
                       <div className="flex items-center justify-center gap-3 mt-2">
                         <span className="text-2xl md:text-3xl font-extrabold tracking-widest font-mono text-emerald-600 dark:text-emerald-400 bg-card px-4 py-2 rounded-xl border border-border shadow-sm">
                           {pairingCode}
@@ -1005,16 +1006,16 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                     </div>
 
                     <div className="p-3 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 rounded-xl text-xs space-y-1.5 text-amber-900 dark:text-amber-300">
-                      <strong className="block font-semibold">👉 Hướng dẫn Sếp nhập mã trên điện thoại:</strong>
-                      <p>1. Mở <strong>WhatsApp</strong> ➡️ <strong>Cài đặt (Settings)</strong> ➡️ <strong>Thiết bị liên kết (Linked Devices)</strong>.</p>
-                      <p>2. Bấm <strong>Liên kết thiết bị</strong> ➡️ Chọn <strong>"Liên kết bằng số điện thoại" (Link with phone number instead)</strong>.</p>
+                      <strong className="flex items-center gap-1.5 font-semibold"><Info className="w-3.5 h-3.5" /> Hướng dẫn nhập mã trên điện thoại:</strong>
+                      <p>1. Mở <strong>WhatsApp</strong> &gt; <strong>Cài đặt (Settings)</strong> &gt; <strong>Thiết bị liên kết (Linked Devices)</strong>.</p>
+                      <p>2. Chọn <strong>Liên kết thiết bị</strong> &gt; <strong>"Liên kết bằng số điện thoại" (Link with phone number instead)</strong>.</p>
                       <p>3. Nhập mã <strong>{pairingCode}</strong> vào điện thoại để hoàn tất kết nối.</p>
                     </div>
 
                     <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
                       <span className="flex items-center gap-1.5">
                         <RefreshCw className="w-3.5 h-3.5 animate-spin text-primary" />
-                        Đang đợi Sếp xác nhận trên điện thoại...
+                        Đang chờ xác nhận trên điện thoại...
                       </span>
                       <button type="button" onClick={() => setWaStep('phone')} className="text-primary hover:underline cursor-pointer">Nhập lại SĐT</button>
                     </div>
@@ -1051,7 +1052,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                   zaloMode === 'qr' ? 'bg-card text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                ⭐ Quét mã QR Cá nhân
+                Quét mã QR Cá nhân
               </button>
               <button
                 type="button"
@@ -1068,7 +1069,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
               <div className="p-2.5 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
                 <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
                 <span>
-                  <strong>Vì sao Zalo Cá nhân cần quét QR?</strong> Zalo bảo vệ tài khoản cá nhân nghiêm ngặt (chống hack qua SĐT/mật khẩu bên thứ ba). Quét mã QR là phương thức an toàn, chính thức để xác thực 1 chạm từ điện thoại mà không cần nhập mật khẩu.
+                  <strong>Xác thực tài khoản:</strong> Quét mã QR là phương thức bảo mật chính thức của Zalo để liên kết tài khoản an toàn từ điện thoại.
                 </span>
               </div>
             )}
@@ -1082,7 +1083,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                     </div>
                     <div>
                       <h4 className="text-base font-bold">Đã kết nối Zalo thành công!</h4>
-                      <p className="text-xs text-muted-foreground mt-1">Tài khoản Zalo: <strong>{zaloUser?.name || 'Zalo Sếp'}</strong> đã được liên kết.</p>
+                      <p className="text-xs text-muted-foreground mt-1">Tài khoản Zalo: <strong>{zaloUser?.name || 'Zalo'}</strong> đã được liên kết.</p>
                     </div>
                     <button type="button" onClick={onClose} className="w-full py-2.5 bg-primary text-primary-foreground font-semibold text-xs rounded-xl cursor-pointer">Hoàn tất & Đóng</button>
                   </div>
@@ -1091,7 +1092,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                     {zaloQrImage ? (
                       <>
                         <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800/40 rounded-xl text-xs text-blue-800 dark:text-blue-300 text-left animate-in fade-in">
-                          💡 Nhờ Sếp mở ứng dụng <strong>Zalo trên điện thoại ➡️ Bấm biểu tượng Quét mã QR</strong> ở góc trên bên phải để quét mã bên dưới:
+                          Mở ứng dụng <strong>Zalo trên điện thoại &gt; Chọn biểu tượng Quét mã QR</strong> ở góc trên bên phải để quét mã bên dưới:
                         </div>
 
                         <div className="flex flex-col items-center justify-center p-4 bg-muted/40 rounded-2xl border border-border min-h-[220px]">
@@ -1103,7 +1104,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                             />
                             {zaloStatus === 'scanned' && (
                               <p className="text-xs font-semibold text-emerald-600 animate-pulse">
-                                ✅ Sếp đã quét mã! Vui lòng bấm "Đồng ý" trên điện thoại...
+                                Đã quét mã thành công! Vui lòng bấm "Đồng ý" trên điện thoại...
                               </p>
                             )}
                           </div>
@@ -1181,7 +1182,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                   fbMode === 'login' ? 'bg-card text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                ⭐ Đăng nhập Facebook (Popup)
+                Đăng nhập Facebook
               </button>
               <button
                 type="button"
@@ -1193,6 +1194,7 @@ export default function ConnectModal({ isOpen, onClose, initialPlatform }: Conne
                 Nhập Token thủ công
               </button>
             </div>
+
 
             {/* Facebook Account Login Mode */}
             {fbMode === 'login' && (

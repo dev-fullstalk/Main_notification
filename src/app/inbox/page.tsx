@@ -15,8 +15,11 @@ export default function InboxPage() {
     fetchChannels,
     fetchConversations,
     fetchMessages,
-    activeChannelId
+    activeChannelId,
+    handleRealtimeMessage,
+    handleRealtimeConversation
   } = useChatStore();
+
 
   // Initial data loading from database on mount
   useEffect(() => {
@@ -24,17 +27,48 @@ export default function InboxPage() {
     fetchConversations(activeChannelId);
   }, []);
 
-  // Polling to sync database updates (new conversations/messages/typing events)
+  // Server-Sent Events (SSE) Real-time Stream: 1 kết nối duy nhất, 0% CPU lãng phí
   useEffect(() => {
-    const interval = setInterval(() => {
+    console.log('[Real-time Push] Establishing EventSource connection to /api/events...');
+    const eventSource = new EventSource('/api/events');
+
+    eventSource.onopen = () => {
+      console.log('[Real-time Push] Connected to real-time event stream.');
+    };
+
+    eventSource.onmessage = (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload.event === 'new_message') {
+          handleRealtimeMessage(payload.data);
+        } else if (payload.event === 'conversation_updated') {
+          handleRealtimeConversation(payload.data);
+        }
+      } catch (err) {
+        console.warn('Error parsing incoming SSE event:', err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.warn('[Real-time Push] Connection interrupted, EventSource will auto-reconnect...', err);
+    };
+
+    // Khi người dùng chuyển tab quay lại (focus), nhẹ nhàng đồng bộ lại 1 lần phòng trường hợp mất mạng lâu
+    const onWindowFocus = () => {
       fetchConversations(activeChannelId);
       if (activeConversationId) {
         fetchMessages(activeConversationId);
       }
-    }, 1200);
+    };
+    window.addEventListener('focus', onWindowFocus);
 
-    return () => clearInterval(interval);
-  }, [activeChannelId, activeConversationId]);
+    return () => {
+      window.removeEventListener('focus', onWindowFocus);
+      eventSource.close();
+      console.log('[Real-time Push] Closed EventSource connection.');
+    };
+  }, [activeChannelId, activeConversationId, handleRealtimeMessage, handleRealtimeConversation]);
+
 
   // Find active conversation and contact profiles
   const activeConversation = conversations.find(c => c.id === activeConversationId);
