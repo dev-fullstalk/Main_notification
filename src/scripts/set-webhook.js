@@ -1,6 +1,6 @@
 const { Pool } = require('pg');
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../.ENV') });
+require('dotenv').config({ path: path.resolve(__dirname, '../../.ENV'), quiet: true });
 
 const host = process.env.DB_HOST || '127.0.0.1';
 const port = parseInt(process.env.DB_PORT || '5433');

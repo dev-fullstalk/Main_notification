@@ -3,7 +3,7 @@ const { StringSession } = require('telegram/sessions');
 const input = require('input');
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../.ENV') });
+require('dotenv').config({ path: path.resolve(__dirname, '../../.ENV'), quiet: true });
 
 const apiId = 38802670;
 const apiHash = '245dbf5bc61c0590b473fb31747bb198';

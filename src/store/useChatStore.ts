@@ -11,6 +11,8 @@ import { mockChannels } from '../mocks/channels.mock';
 import { mockContacts } from '../mocks/contacts.mock';
 import { mockConversations } from '../mocks/conversations.mock';
 
+const clientTypingTimers: Record<string, NodeJS.Timeout> = {};
+
 interface ChatState {
   currentUser: User;
   users: User[];
@@ -46,7 +48,16 @@ interface ChatState {
   fetchChannels: () => Promise<void>;
   fetchConversations: (channelId: string | null) => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;
+
+  // Poll actions
+  createPoll: (conversationId: string, question: string, options: string[], allowMultiChoices?: boolean, isAnonymous?: boolean) => Promise<boolean>;
+  votePoll: (conversationId: string, messageId: string, optionId: number) => Promise<void>;
+
+  // Real-time Push (SSE) handlers
+  handleRealtimeMessage: (data: any) => void;
+  handleRealtimeConversation: (data: any) => void;
 }
+
 
 export const useChatStore = create<ChatState>((set, get) => ({
   currentUser,
@@ -116,6 +127,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             isTyping: Boolean(c.is_typing)
           });
 
+          const isGroup = Boolean(c.contact_metadata?.is_group || c.metadata?.is_group || (c.contact_name && c.contact_name.startsWith('[Nhóm]')));
           if (!contacts.some(ct => ct.id === String(c.contact_id))) {
             contacts.push({
               id: String(c.contact_id),
@@ -124,7 +136,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
               name: c.contact_name || 'Khách hàng',
               avatarUrl: c.contact_avatar_url || `https://api.dicebear.com/7.x/adventurer/svg?seed=${c.contact_name || 'Customer'}`,
               phone: c.contact_phone || undefined,
-              email: c.contact_email || undefined
+              email: c.contact_email || undefined,
+              isGroup,
+              metadata: c.contact_metadata || {}
             });
           }
         });
@@ -157,9 +171,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           conversationId: String(m.conversation_id),
           senderType: m.sender_type || (m.id__messages_sender_types === 1 ? 'customer' : 'agent'),
           senderUserId: m.sender_user_id ? String(m.sender_user_id) : undefined,
-          messageType: m.message_type || 'text',
+          senderName: m.payload?.sender_name || (m.sender_type === 'agent' ? m.agent_name : undefined),
+          messageType: m.payload?.poll ? 'poll' : (m.message_type || 'text'),
           content: m.content || '',
           mediaUrl: m.media_url || undefined,
+          payload: m.payload || undefined,
           status: m.status || 'sent',
           createdAt: m.created_at,
         }));
@@ -233,13 +249,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setStatusFilter: (filter) => set({ statusFilter: filter }),
 
   sendMessage: async (conversationId, text, type = 'text', mediaUrl) => {
+    // Không gửi tin nhắn rỗng nếu không có đính kèm
+    if (!text?.trim() && !mediaUrl) {
+      return;
+    }
+
     const newLocalMessage: Message = {
       id: `local-msg-${Date.now()}`,
       conversationId,
       senderType: 'agent',
       senderUserId: get().currentUser.id,
       messageType: type,
-      content: text,
+      content: text.trim(),
       mediaUrl,
       status: 'sent',
       createdAt: new Date().toISOString()
@@ -367,4 +388,190 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
     }
   },
+
+  handleRealtimeMessage: (msg: any) => {
+    if (!msg || !msg.id) return;
+    const conversationIdStr = String(msg.conversation_id);
+    const activeConvId = get().activeConversationId;
+
+    // 1. Cập nhật tin nhắn trong khung chat Cột 3 nếu thuộc cuộc trò chuyện đang mở
+    if (activeConvId && conversationIdStr === activeConvId) {
+      set((state) => {
+        // Kiểm tra xem tin nhắn đã có chưa (tránh trùng lặp id)
+        const exists = state.messages.some((m) => String(m.id) === String(msg.id));
+        if (exists) {
+          return {
+            messages: state.messages.map((m) =>
+              String(m.id) === String(msg.id)
+                ? {
+                    ...m,
+                    status: msg.status || m.status,
+                    content: msg.content || m.content,
+                  }
+                : m
+            ),
+          };
+        }
+
+        // Lọc bỏ tin nhắn tạm local-msg tương ứng nếu có
+        const filtered = state.messages.filter((m) => {
+          if (m.id.startsWith('local-msg-') && m.content === msg.content && m.senderType === msg.sender_type) {
+            return false;
+          }
+          return true;
+        });
+
+        const newMsg: Message = {
+          id: String(msg.id),
+          conversationId: conversationIdStr,
+          senderType: msg.sender_type || (msg.id__messages_sender_types === 1 ? 'customer' : 'agent'),
+          senderUserId: msg.sender_user_id ? String(msg.sender_user_id) : undefined,
+          messageType: msg.message_type || 'text',
+          content: msg.content || '',
+          mediaUrl: msg.media_url || undefined,
+          status: msg.status || 'sent',
+          createdAt: msg.created_at || new Date().toISOString(),
+        };
+
+        return { messages: [...filtered, newMsg] };
+      });
+    }
+
+      // 2. Cập nhật preview tin nhắn cuối, thời gian và số tin chưa đọc ở Cột 2
+    if (clientTypingTimers[conversationIdStr]) {
+      clearTimeout(clientTypingTimers[conversationIdStr]);
+      delete clientTypingTimers[conversationIdStr];
+    }
+
+    set((state) => {
+      let found = false;
+      const updated = state.conversations.map((c) => {
+        if (c.id === conversationIdStr) {
+          found = true;
+          const isCurrentActive = activeConvId === conversationIdStr;
+          return {
+            ...c,
+            lastMessagePreview: msg.content || (msg.media_url ? '[Tập tin đính kèm]' : c.lastMessagePreview),
+            lastMessageAt: msg.created_at || new Date().toISOString(),
+            unreadCount: isCurrentActive ? 0 : (msg.sender_type === 'customer' ? (c.unreadCount || 0) + 1 : c.unreadCount),
+            isTyping: false,
+          };
+        }
+        return c;
+      });
+
+      // Nếu cuộc hội thoại chưa từng xuất hiện (khách hàng mới toanh), fetch lại danh sách
+      if (!found) {
+        get().fetchConversations(get().activeChannelId);
+        return {};
+      }
+
+      // Đưa hội thoại vừa có tin nhắn mới lên đầu danh sách
+      updated.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+      return { conversations: updated };
+    });
+  },
+
+  handleRealtimeConversation: (data: any) => {
+    if (!data || !data.id) return;
+    const convIdStr = String(data.id);
+
+    // Xử lý tự động hủy trạng thái gõ phím sau 6 giây
+    if (data.is_typing) {
+      if (clientTypingTimers[convIdStr]) {
+        clearTimeout(clientTypingTimers[convIdStr]);
+      }
+      clientTypingTimers[convIdStr] = setTimeout(() => {
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === convIdStr ? { ...c, isTyping: false } : c
+          ),
+        }));
+        delete clientTypingTimers[convIdStr];
+      }, 6000);
+    } else if (data.is_typing === false && clientTypingTimers[convIdStr]) {
+      clearTimeout(clientTypingTimers[convIdStr]);
+      delete clientTypingTimers[convIdStr];
+    }
+
+    set((state) => {
+      let found = false;
+      const updated = state.conversations.map((c) => {
+        if (c.id === convIdStr) {
+          found = true;
+          return {
+            ...c,
+            lastMessagePreview: data.last_message_preview !== undefined ? data.last_message_preview : c.lastMessagePreview,
+            lastMessageAt: data.last_message_at !== undefined ? data.last_message_at : c.lastMessageAt,
+            unreadCount: data.unread_count !== undefined ? data.unread_count : c.unreadCount,
+            isTyping: data.is_typing !== undefined ? Boolean(data.is_typing) : c.isTyping,
+          };
+        }
+        return c;
+      });
+
+      if (!found) {
+        get().fetchConversations(get().activeChannelId);
+        return {};
+      }
+
+      updated.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+      return { conversations: updated };
+    });
+  },
+
+  createPoll: async (conversationId, question, options, allowMultiChoices = false, isAnonymous = false) => {
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/polls`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, options, allowMultiChoices, isAnonymous }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        await get().fetchMessages(conversationId);
+        await get().fetchConversations(get().activeChannelId);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error('Failed to create poll:', e);
+      return false;
+    }
+  },
+
+  votePoll: async (conversationId, messageId, optionId) => {
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/polls/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageId,
+          optionId,
+          userId: get().currentUser.id,
+          userName: get().currentUser.name,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data?.poll) {
+        // Optimistically update message in state
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.id === String(messageId)
+              ? {
+                  ...m,
+                  payload: {
+                    ...(m.payload || {}),
+                    poll: json.data.poll,
+                  },
+                }
+              : m
+          ),
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to vote poll:', e);
+    }
+  },
 }));
+
