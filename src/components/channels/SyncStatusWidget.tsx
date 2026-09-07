@@ -47,13 +47,13 @@ export default function SyncStatusWidget() {
       });
       const data = await res.json();
       if (data.success) {
-        setMessage(`✅ ${data.message}`);
+        setMessage(data.message);
         setStatus(data.status);
       } else {
-        setMessage(`❌ Lỗi: ${data.error}`);
+        setMessage(`Lỗi: ${data.error}`);
       }
     } catch (err: any) {
-      setMessage(`❌ Lỗi kết nối: ${err.message}`);
+      setMessage(`Lỗi kết nối: ${err.message}`);
     } finally {
       setIsLoading(false);
       setTimeout(() => setMessage(null), 4000);
@@ -90,8 +90,17 @@ export default function SyncStatusWidget() {
       </p>
 
       {message && (
-        <div className="p-2.5 rounded-xl bg-muted border border-border text-xs animate-in fade-in">
-          {message}
+        <div className={`p-2.5 rounded-xl border text-xs animate-in fade-in flex items-center gap-2 ${
+          message.startsWith('Lỗi') 
+            ? 'bg-destructive/10 border-destructive/20 text-destructive' 
+            : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+        }`}>
+          {message.startsWith('Lỗi') ? (
+            <AlertCircle className="w-4 h-4 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+          )}
+          <span>{message}</span>
         </div>
       )}
 

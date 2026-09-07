@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Search, Filter, MessageSquareDashed, PanelLeftOpen } from 'lucide-react';
+import { Search, Filter, MessageSquareDashed, PanelLeftOpen, Users } from 'lucide-react';
 import { useChatStore } from '../../store/useChatStore';
 import { formatRelativeTime } from '../../lib/utils';
 import { PLATFORMS } from '../../lib/constants';
@@ -163,10 +163,16 @@ export default function Column2ConvList() {
                 {/* Text Details */}
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-baseline mb-0.5">
-                    <h4 className={`text-xs font-semibold truncate ${
+                    <h4 className={`text-xs font-semibold truncate flex items-center gap-1.5 ${
                       isActive ? 'text-primary' : 'text-foreground'
                     }`}>
-                      {contact.name}
+                      {contact.isGroup && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 text-[9px] font-bold shrink-0 shadow-2xs">
+                          <Users className="w-2.5 h-2.5" />
+                          Nhóm
+                        </span>
+                      )}
+                      <span className="truncate">{contact.name}</span>
                     </h4>
                     <span className="text-[10px] text-muted-foreground shrink-0 ml-1">
                       {formatRelativeTime(c.lastMessageAt)}
@@ -175,7 +181,7 @@ export default function Column2ConvList() {
                   {c.isTyping ? (
                     <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5 animate-pulse">
                       <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                      💬 Đang soạn tin...
+                      Đang soạn tin...
                     </span>
                   ) : (
                     <p className={`text-[11px] truncate leading-normal ${

@@ -91,8 +91,8 @@ function FacebookMobileApprovalContent() {
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Fanpage <strong>{pageName}</strong> đã được kết nối vào hệ thống trên máy tính của bạn.
             </p>
-            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 font-semibold mt-2">
-              👉 Bạn có thể đóng trang này và xem kết quả trên máy tính!
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 font-medium mt-2">
+              Bạn có thể đóng trang này và xem kết quả trên máy tính.
             </div>
           </div>
         ) : (

@@ -9,7 +9,7 @@ const pino = require('pino');
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../.ENV') });
+require('dotenv').config({ path: path.resolve(__dirname, '../../.ENV'), quiet: true });
 
 // Thư mục lưu auth session & media tải từ WhatsApp
 const authDir = path.resolve(__dirname, '../../whatsapp_auth');

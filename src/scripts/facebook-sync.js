@@ -1,6 +1,6 @@
 const { Pool } = require('pg');
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../.ENV') });
+require('dotenv').config({ path: path.resolve(__dirname, '../../.ENV'), quiet: true });
 
 const pageId = process.env.FACEBOOK_PAGE_ID || '';
 const pageAccessToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN || '';

@@ -4,7 +4,7 @@ const { NewMessage } = require('telegram/events');
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../.ENV') });
+require('dotenv').config({ path: path.resolve(__dirname, '../../.ENV'), quiet: true });
 
 const apiId = 38802670;
 const apiHash = '245dbf5bc61c0590b473fb31747bb198';
@@ -113,53 +113,91 @@ async function main() {
   }
 
   // --- HÀM LƯU TIN NHẮN VÀO DATABASE ---
-  async function saveTelegramMessage(senderId, senderName, textContent, msgId, isOutgoing = false, mediaUrl = null, messageTypeId = 1) {
+  async function saveTelegramMessage(
+    peerId,
+    peerName,
+    textContent,
+    msgId,
+    isOutgoing = false,
+    mediaUrl = null,
+    messageTypeId = 1,
+    isGroup = false,
+    senderName = null,
+    payload = {}
+  ) {
     try {
       if (!textContent && !mediaUrl) textContent = '[Tập tin/Hình ảnh]';
 
       // 1. Contact
       let contactRes = await pool.query(
-        `SELECT id FROM contacts WHERE channel_id = $1 AND external_user_id = $2`,
-        [channelId, senderId]
+        `SELECT id, metadata FROM contacts WHERE channel_id = $1 AND external_user_id = $2`,
+        [channelId, peerId]
       );
       let contactId;
       if (contactRes.rows.length === 0) {
+        const contactMetadata = isGroup ? { is_group: true, group_id: peerId } : {};
         const newContact = await pool.query(
           `INSERT INTO contacts (channel_id, external_user_id, name, metadata)
-           VALUES ($1, $2, $3, '{}')
+           VALUES ($1, $2, $3, $4)
            RETURNING id`,
-          [channelId, senderId, senderName]
+          [channelId, peerId, peerName, JSON.stringify(contactMetadata)]
         );
         contactId = newContact.rows[0].id;
       } else {
         contactId = contactRes.rows[0].id;
+        if (isGroup) {
+          const existingMeta = contactRes.rows[0].metadata || {};
+          const updatedMeta = { ...existingMeta, is_group: true, group_id: peerId };
+          await pool.query(
+            `UPDATE contacts SET name = $1, metadata = $2 WHERE id = $3`,
+            [peerName, JSON.stringify(updatedMeta), contactId]
+          );
+        } else if (peerName && !peerName.startsWith('User ')) {
+          await pool.query(`UPDATE contacts SET name = $1 WHERE id = $2`, [peerName, contactId]);
+        }
       }
 
       // 2. Conversation
       const lastPreview = mediaUrl ? (messageTypeId === 2 ? '[Hình ảnh/GIF]' : '[Tài liệu]') : textContent;
       let convRes = await pool.query(
-        `SELECT id FROM conversations WHERE channel_id = $1 AND contact_id = $2`,
+        `SELECT id, metadata FROM conversations WHERE channel_id = $1 AND contact_id = $2`,
         [channelId, contactId]
       );
       let convId;
       if (convRes.rows.length === 0) {
         const newConv = await pool.query(
-          `INSERT INTO conversations (channel_id, contact_id, id__conversations_statuses, last_message_preview, last_message_at, unread_count)
-           VALUES ($1, $2, 1, $3, CURRENT_TIMESTAMP, $4)
+          `INSERT INTO conversations (channel_id, contact_id, id__conversations_statuses, last_message_preview, last_message_at, unread_count, metadata)
+           VALUES ($1, $2, 1, $3, CURRENT_TIMESTAMP, $4, $5)
            RETURNING id`,
-          [channelId, contactId, lastPreview, isOutgoing ? 0 : 1]
+          [channelId, contactId, lastPreview, isOutgoing ? 0 : 1, JSON.stringify(isGroup ? { is_group: true } : {})]
         );
         convId = newConv.rows[0].id;
       } else {
         convId = convRes.rows[0].id;
-        await pool.query(
-          `UPDATE conversations 
-           SET last_message_preview = $1, 
-               last_message_at = CURRENT_TIMESTAMP, 
-               unread_count = CASE WHEN $3 = true THEN unread_count ELSE unread_count + 1 END
-           WHERE id = $2`,
-          [lastPreview, convId, isOutgoing]
-        );
+        if (isGroup) {
+          const existingMeta = convRes.rows[0].metadata || {};
+          const updatedMeta = { ...existingMeta, is_group: true };
+          await pool.query(
+            `UPDATE conversations 
+             SET last_message_preview = $1, 
+                 last_message_at = CURRENT_TIMESTAMP, 
+                 unread_count = CASE WHEN $3 = true THEN unread_count ELSE unread_count + 1 END,
+                 is_typing = false,
+                 metadata = $4
+             WHERE id = $2`,
+            [lastPreview, convId, isOutgoing, JSON.stringify(updatedMeta)]
+          );
+        } else {
+          await pool.query(
+            `UPDATE conversations 
+             SET last_message_preview = $1, 
+                 last_message_at = CURRENT_TIMESTAMP, 
+                 unread_count = CASE WHEN $3 = true THEN unread_count ELSE unread_count + 1 END,
+                 is_typing = false
+             WHERE id = $2`,
+            [lastPreview, convId, isOutgoing]
+          );
+        }
       }
 
       // 3. Message check trùng
@@ -181,10 +219,15 @@ async function main() {
       }
 
       const senderTypeId = isOutgoing ? 2 : 1; // 1: customer, 2: agent
+      const finalPayload = {
+        ...(payload || {}),
+        ...(senderName ? { sender_name: senderName } : {}),
+      };
+
       await pool.query(
-        `INSERT INTO messages (conversation_id, id__messages_sender_types, id__messages_types, content, media_url, external_message_id, id__messages_statuses)
-         VALUES ($1, $2, $3, $4, $5, $6, 3)`,
-        [convId, senderTypeId, messageTypeId, textContent, mediaUrl, msgId || null]
+        `INSERT INTO messages (conversation_id, id__messages_sender_types, id__messages_types, content, media_url, external_message_id, id__messages_statuses, payload)
+         VALUES ($1, $2, $3, $4, $5, $6, 3, $7)`,
+        [convId, senderTypeId, messageTypeId, textContent, mediaUrl, msgId || null, JSON.stringify(finalPayload)]
       );
     } catch (e) {
       console.error('Lỗi khi lưu tin nhắn:', e.message);
@@ -196,12 +239,19 @@ async function main() {
   try {
     const dialogs = await client.getDialogs({ limit: 15 });
     for (const dialog of dialogs) {
-      if (!dialog.isUser) continue;
+      const isGroup = Boolean(dialog.isGroup || dialog.isChannel);
+      if (!dialog.isUser && !isGroup) continue;
       const peer = dialog.entity;
       if (!peer || String(peer.id) === String(me.id)) continue;
 
       const peerId = String(peer.id);
-      const peerName = [peer.firstName, peer.lastName].filter(Boolean).join(' ') || peer.username || `User ${peerId}`;
+      let peerName = '';
+      if (isGroup) {
+        const t = peer.title || 'Nhóm Telegram';
+        peerName = t.startsWith('[Nhóm]') ? t : `[Nhóm] ${t}`;
+      } else {
+        peerName = [peer.firstName, peer.lastName].filter(Boolean).join(' ') || peer.username || `User ${peerId}`;
+      }
 
       const history = await client.getMessages(peer, { limit: 15 });
       for (const msg of history.reverse()) {
@@ -213,7 +263,31 @@ async function main() {
           mediaUrl = dl.mediaUrl;
           msgType = dl.messageTypeId;
         }
-        await saveTelegramMessage(peerId, peerName, text, String(msg.id), Boolean(msg.out), mediaUrl, msgType);
+
+        let senderName = null;
+        if (isGroup) {
+          try {
+            const senderEnt = await msg.getSender();
+            if (senderEnt) {
+              senderName = Boolean(msg.out)
+                ? 'Bạn'
+                : ([senderEnt.firstName, senderEnt.lastName].filter(Boolean).join(' ') || senderEnt.username || 'Thành viên');
+            }
+          } catch (e) {}
+        }
+
+        await saveTelegramMessage(
+          peerId,
+          peerName,
+          text,
+          String(msg.id),
+          Boolean(msg.out),
+          mediaUrl,
+          msgType,
+          isGroup,
+          senderName,
+          senderName ? { sender_name: senderName } : {}
+        );
       }
     }
     console.log('✅ Đã đồng bộ xong lịch sử tin nhắn & hình ảnh vào Web App!');
@@ -239,8 +313,26 @@ async function main() {
       if (!sender || !sender.id) return;
 
       const isOut = Boolean(message.out);
-      const peerId = String(sender.id);
-      const peerName = [sender.firstName, sender.lastName].filter(Boolean).join(' ') || sender.username || `User ${peerId}`;
+      const isGroup = Boolean(message.isGroup || message.isChannel);
+
+      let peerId;
+      let peerName;
+      let senderName = '';
+
+      if (isGroup) {
+        const chat = await message.getChat();
+        peerId = String(message.chatId || (chat && chat.id) || '');
+        const chatTitle = (chat && (chat.title || chat.name)) || 'Nhóm Telegram';
+        peerName = chatTitle.startsWith('[Nhóm]') ? chatTitle : `[Nhóm] ${chatTitle}`;
+        senderName = isOut
+          ? 'Bạn'
+          : ([sender.firstName, sender.lastName].filter(Boolean).join(' ') || sender.username || 'Thành viên');
+      } else {
+        peerId = String(sender.id);
+        peerName = [sender.firstName, sender.lastName].filter(Boolean).join(' ') || sender.username || `User ${peerId}`;
+        senderName = isOut ? 'Bạn' : peerName;
+      }
+
       const textContent = message.message || '';
       
       let mediaUrl = null;
@@ -251,8 +343,21 @@ async function main() {
         msgType = dl.messageTypeId;
       }
 
-      console.log(`📥 [${isOut ? 'Bạn gửi' : 'Khách gửi'}] (${peerName}): ${textContent || '[Media file]'}`);
-      await saveTelegramMessage(peerId, peerName, textContent, String(message.id), isOut, mediaUrl, msgType);
+      if (!isOut) {
+        console.log(`[Telegram] 📥 ${senderName} (${peerName}): ${(textContent || '[Media file]').slice(0, 60)}`);
+      }
+      await saveTelegramMessage(
+        peerId,
+        peerName,
+        textContent,
+        String(message.id),
+        isOut,
+        mediaUrl,
+        msgType,
+        isGroup,
+        isGroup ? senderName : null,
+        { sender_name: senderName, sender_id: String(sender.id) }
+      );
     } catch (err) {
       console.error('Lỗi nhận tin nhắn live:', err.message);
     }
@@ -281,6 +386,21 @@ async function main() {
             SET is_typing = true, typing_updated_at = CURRENT_TIMESTAMP 
             WHERE channel_id = $1 AND contact_id = (SELECT id FROM contacts WHERE channel_id = $1 AND external_user_id = $2 LIMIT 1)
           `, [channelId, peerUserId]);
+
+          if (global.__teleTypingTimeouts?.has(peerUserId)) {
+            clearTimeout(global.__teleTypingTimeouts.get(peerUserId));
+          }
+          if (!global.__teleTypingTimeouts) global.__teleTypingTimeouts = new Map();
+          global.__teleTypingTimeouts.set(peerUserId, setTimeout(async () => {
+            try {
+              await pool.query(`
+                UPDATE conversations 
+                SET is_typing = false 
+                WHERE channel_id = $1 AND contact_id = (SELECT id FROM contacts WHERE channel_id = $1 AND external_user_id = $2 LIMIT 1) AND is_typing = true
+              `, [channelId, peerUserId]);
+            } catch (e) {}
+            global.__teleTypingTimeouts.delete(peerUserId);
+          }, 6000));
         }
       }
     } catch (delErr) {
@@ -325,7 +445,6 @@ async function main() {
 
       for (const row of unsent.rows) {
         if (row.content && row.external_user_id) {
-          console.log(`📤 Đang gửi từ Web App tới Telegram (User ID: ${row.external_user_id}): "${row.content}"`);
           try {
             const inputPeer = await client.getInputEntity(row.external_user_id);
             const sentMsg = await client.sendMessage(inputPeer, {
@@ -337,9 +456,9 @@ async function main() {
               SET external_message_id = $1, id__messages_statuses = 3 
               WHERE id = $2
             `, [String(sentMsg.id), row.id]);
-            console.log(`✅ Gửi tin nhắn thành công qua Telegram!`);
+            console.log(`[Telegram] 📤 Đã gửi tới ${row.external_user_id}: "${row.content.slice(0, 50)}"`);
           } catch (sendErr) {
-            console.error('Lỗi gửi Telegram qua MTProto:', sendErr.message);
+            console.error(`❌ [Telegram] Lỗi gửi tới ${row.external_user_id}:`, sendErr.message);
             await pool.query(`UPDATE messages SET external_message_id = 'ERR' WHERE id = $1`, [row.id]);
           }
         }

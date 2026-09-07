@@ -3,7 +3,8 @@ export interface Message {
   conversationId: string;
   senderType: 'customer' | 'agent' | 'bot' | 'system';
   senderUserId?: string | null;
-  messageType: 'text' | 'image' | 'video' | 'file' | 'audio' | 'sticker';
+  messageType: 'text' | 'image' | 'video' | 'file' | 'audio' | 'sticker' | 'poll';
+  senderName?: string;
   content?: string;
   mediaUrl?: string;
   payload?: Record<string, any>;
