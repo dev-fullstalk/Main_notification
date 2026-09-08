@@ -28,19 +28,82 @@ const pool = new Pool({
 let apiInstance;
 let channelId;
 const groupNameCache = new Map();
+const contactProfileCache = new Map();
+
+async function getZaloContactProfile(peerId, isGroup = false, fallbackName = '') {
+  if (!peerId || peerId === 'zalo-user') {
+    return { name: fallbackName || `Zalo User ${peerId}`, avatar_url: null, phone: '', metadata: {} };
+  }
+
+  // Nếu trong cache đã có tên thật (không phải placeholder 'Zalo User ...')
+  if (contactProfileCache.has(peerId)) {
+    const cached = contactProfileCache.get(peerId);
+    if (cached && cached.name && !cached.name.startsWith('Zalo User')) {
+      return cached;
+    }
+  }
+
+  let profile = {
+    name: fallbackName || (isGroup ? `[Nhóm] Zalo ${peerId}` : `Zalo User ${peerId}`),
+    avatar_url: null,
+    phone: '',
+    metadata: isGroup ? { is_group: true, group_id: peerId } : {},
+  };
+
+  if (!apiInstance) return profile;
+
+  try {
+    if (isGroup) {
+      const gInfo = await apiInstance.getGroupInfo(peerId);
+      if (gInfo && gInfo.gridInfoMap && gInfo.gridInfoMap[peerId]) {
+        const grp = gInfo.gridInfoMap[peerId];
+        const rawName = grp.name || `Nhóm Zalo ${peerId}`;
+        const groupTitle = rawName.startsWith('[Nhóm]') ? rawName : `[Nhóm] ${rawName}`;
+        profile = {
+          name: groupTitle,
+          avatar_url: grp.avt || null,
+          phone: '',
+          metadata: {
+            is_group: true,
+            group_id: peerId,
+            total_members: grp.totalMember || 0,
+            desc: grp.desc || '',
+          },
+        };
+        groupNameCache.set(peerId, groupTitle);
+      }
+    } else {
+      const uInfo = await apiInstance.getUserInfo(peerId);
+      if (uInfo && uInfo.changed_profiles && uInfo.changed_profiles[peerId]) {
+        const u = uInfo.changed_profiles[peerId];
+        const realName = u.displayName || u.zaloName || fallbackName || `Zalo User ${peerId}`;
+        profile = {
+          name: realName,
+          avatar_url: u.avatar || null,
+          phone: u.phoneNumber || '',
+          metadata: {
+            username: u.username || '',
+            gender: u.gender,
+            cover: u.cover || null,
+            status: u.status || '',
+            zalo_name: u.zaloName || '',
+            display_name: u.displayName || '',
+          },
+        };
+      }
+    }
+    contactProfileCache.set(peerId, profile);
+  } catch (err) {
+    console.warn(`⚠️ [Zalo] Không lấy được profile của ${peerId}:`, err.message);
+  }
+
+  return profile;
+}
 
 async function getZaloGroupName(groupId) {
   if (groupNameCache.has(groupId)) return groupNameCache.get(groupId);
-  if (!apiInstance) return `Nhóm Zalo ${groupId}`;
-  try {
-    const info = await apiInstance.getGroupInfo(groupId);
-    if (info && info.gridInfoMap && info.gridInfoMap[groupId]?.name) {
-      const gName = info.gridInfoMap[groupId].name;
-      groupNameCache.set(groupId, gName);
-      return gName;
-    }
-  } catch (e) {}
-  return `Nhóm Zalo ${groupId}`;
+  const profile = await getZaloContactProfile(groupId, true);
+  return profile.name;
 }
 
 async function initChannel(zaloUid, zaloName) {
@@ -88,37 +151,57 @@ async function saveZaloMessage(
   try {
     if (!textContent && !mediaUrl) return;
 
+    // Lấy thông tin thật từ Zalo API (Tên thật, Avatar thật, Số điện thoại, v.v.)
+    const profile = await getZaloContactProfile(peerId, isGroup, peerName);
+    const finalName = profile.name || peerName || (isGroup ? `[Nhóm] Zalo ${peerId}` : `Zalo User ${peerId}`);
+    const finalAvatar = profile.avatar_url || null;
+    const finalPhone = profile.phone || '';
+    const finalMeta = {
+      ...(profile.metadata || {}),
+      ...(isGroup ? { is_group: true, group_id: peerId } : {})
+    };
+
     // 1. Lưu Contact (nếu là nhóm thì lưu external_user_id là groupId)
     let contactRes = await pool.query(
-      `SELECT id, metadata FROM contacts WHERE channel_id = $1 AND external_user_id = $2`,
+      `SELECT id, name, avatar_url, phone, metadata FROM contacts WHERE channel_id = $1 AND external_user_id = $2`,
       [channelId, peerId]
     );
     let contactId;
     if (contactRes.rows.length === 0) {
-      const contactMetadata = isGroup ? { is_group: true, group_id: peerId } : {};
       const newContact = await pool.query(
-        `INSERT INTO contacts (channel_id, external_user_id, name, phone, metadata)
-         VALUES ($1, $2, $3, '', $4)
+        `INSERT INTO contacts (channel_id, external_user_id, name, avatar_url, phone, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
-        [
-          channelId,
-          peerId,
-          peerName || (isGroup ? `[Nhóm] Zalo ${peerId}` : `Zalo User ${peerId}`),
-          JSON.stringify(contactMetadata),
-        ]
+        [channelId, peerId, finalName, finalAvatar, finalPhone, JSON.stringify(finalMeta)]
       );
       contactId = newContact.rows[0].id;
     } else {
       contactId = contactRes.rows[0].id;
-      if (isGroup) {
-        const existingMeta = contactRes.rows[0].metadata || {};
-        const updatedMeta = { ...existingMeta, is_group: true, group_id: peerId };
+      const existing = contactRes.rows[0];
+      const isPlaceholder = !existing.name || existing.name.startsWith('Zalo User') || existing.name === 'Khách hàng';
+      const shouldUpdateName = Boolean((finalName && !finalName.startsWith('Zalo User')) && (isPlaceholder || isGroup));
+      const shouldUpdateAvatar = Boolean(finalAvatar && (!existing.avatar_url || finalAvatar !== existing.avatar_url));
+      const shouldUpdatePhone = Boolean(finalPhone && (!existing.phone || finalPhone !== existing.phone));
+
+      if (shouldUpdateName || shouldUpdateAvatar || shouldUpdatePhone) {
         await pool.query(
-          `UPDATE contacts SET name = $1, metadata = $2 WHERE id = $3`,
-          [peerName, JSON.stringify(updatedMeta), contactId]
+          `UPDATE contacts 
+           SET name = CASE WHEN $1 = true THEN $2 ELSE name END,
+               avatar_url = COALESCE($3, avatar_url),
+               phone = CASE WHEN $4 = true THEN $5 ELSE phone END,
+               metadata = COALESCE(metadata, '{}'::jsonb) || $6::jsonb,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $7`,
+          [
+            shouldUpdateName,
+            finalName,
+            finalAvatar,
+            shouldUpdatePhone,
+            finalPhone,
+            JSON.stringify(finalMeta),
+            contactId
+          ]
         );
-      } else if (peerName && !peerName.startsWith('Zalo User')) {
-        await pool.query(`UPDATE contacts SET name = $1 WHERE id = $2`, [peerName, contactId]);
       }
     }
 
@@ -139,30 +222,19 @@ async function saveZaloMessage(
       convId = newConv.rows[0].id;
     } else {
       convId = convRes.rows[0].id;
-      if (isGroup) {
-        const existingMeta = convRes.rows[0].metadata || {};
-        const updatedMeta = { ...existingMeta, is_group: true };
-        await pool.query(
-          `UPDATE conversations 
-           SET last_message_preview = $1, 
-               last_message_at = CURRENT_TIMESTAMP, 
-               unread_count = CASE WHEN $3 = true THEN unread_count ELSE unread_count + 1 END,
-               is_typing = false,
-               metadata = $4
-           WHERE id = $2`,
-          [lastPreview, convId, isOutgoing, JSON.stringify(updatedMeta)]
-        );
-      } else {
-        await pool.query(
-          `UPDATE conversations 
-           SET last_message_preview = $1, 
-               last_message_at = CURRENT_TIMESTAMP, 
-               unread_count = CASE WHEN $3 = true THEN unread_count ELSE unread_count + 1 END,
-               is_typing = false
-           WHERE id = $2`,
-          [lastPreview, convId, isOutgoing]
-        );
-      }
+      const existingMeta = convRes.rows[0].metadata || {};
+      const updatedMeta = { ...existingMeta, ...(isGroup ? { is_group: true } : {}) };
+      await pool.query(
+        `UPDATE conversations 
+         SET last_message_preview = $1, 
+             last_message_at = CURRENT_TIMESTAMP, 
+             unread_count = CASE WHEN $3 = true THEN unread_count ELSE unread_count + 1 END,
+             is_typing = false,
+             updated_at = CURRENT_TIMESTAMP,
+             metadata = $4
+         WHERE id = $2`,
+        [lastPreview, convId, isOutgoing, JSON.stringify(updatedMeta)]
+      );
     }
 
     // 3. Kiểm tra trùng Message
@@ -244,15 +316,10 @@ async function startZalo() {
       const isGroup = msg.type === 1 || Boolean(data.groupId);
       const peerId = String(data.groupId || msg.threadId);
 
-      let peerName = '';
-      let senderName = isSelf ? 'Bạn' : (data.dName || 'Thành viên');
-
-      if (isGroup) {
-        const groupTitle = await getZaloGroupName(peerId);
-        peerName = groupTitle.startsWith('[Nhóm]') ? groupTitle : `[Nhóm] ${groupTitle}`;
-      } else {
-        peerName = isSelf ? `Zalo User ${peerId}` : (data.dName || `Zalo User ${peerId}`);
-      }
+      // Lấy thông tin thật (Tên, Avatar, v.v.) của người đối thoại hoặc nhóm
+      const contactProfile = await getZaloContactProfile(peerId, isGroup, data.dName);
+      const peerName = contactProfile.name || (isGroup ? `[Nhóm] Zalo ${peerId}` : (data.dName || `Zalo User ${peerId}`));
+      let senderName = isSelf ? 'Bạn' : (data.dName || contactProfile.name || 'Thành viên');
 
       let textContent = '';
       let mediaUrl = null;
@@ -342,61 +409,33 @@ async function startZalo() {
   apiInstance.listener.start({ retryOnClose: true });
   console.log('📡 Đã kích hoạt lắng nghe tin nhắn Zalo 2 chiều thời gian thực (Cá nhân & Nhóm)!');
 
-  // --- 0. ĐỒNG BỘ DANH SÁCH NHÓM ZALO CHẠY NGẦM TRONG BACKGROUND ---
+  // --- 0. NẠP TÊN CÁC NHÓM ĐÃ CÓ TRONG DB VÀO CACHE BỘ NHỚ ---
   (async () => {
     try {
-      // Nạp trước tất cả nhóm đã lưu trong DB vào cache bộ nhớ (< 5ms)
-      const dbGroups = await pool.query(
-        `SELECT external_user_id, name FROM contacts WHERE channel_id = $1 AND (metadata->>'is_group' = 'true' OR name LIKE '[Nhóm]%')`,
+      // Nạp các liên hệ và nhóm đã có trong DB vào bộ nhớ đệm cache
+      const dbContacts = await pool.query(
+        `SELECT external_user_id, name, avatar_url, phone, metadata FROM contacts WHERE channel_id = $1`,
         [channelId]
       );
-      for (const row of dbGroups.rows) {
-        groupNameCache.set(row.external_user_id, row.name);
-      }
-
-      const allGroups = await apiInstance.getAllGroups();
-      if (allGroups && allGroups.gridVerMap) {
-        const groupIds = Object.keys(allGroups.gridVerMap);
-        // Chỉ quét thông tin nhóm nếu nhóm ĐÓ CHƯA CÓ trong DB
-        const missingGroupIds = groupIds.filter((id) => !groupNameCache.has(id));
-        if (missingGroupIds.length > 0) {
-          console.log(`👥 [Zalo] Tìm thấy ${missingGroupIds.length} nhóm mới cần đồng bộ...`);
-          for (const gId of missingGroupIds) {
-            try {
-              const gInfo = await apiInstance.getGroupInfo(gId);
-              if (gInfo && gInfo.gridInfoMap && gInfo.gridInfoMap[gId]) {
-                const grp = gInfo.gridInfoMap[gId];
-                const gName = grp.name || `Nhóm Zalo ${gId}`;
-                const groupTitle = gName.startsWith('[Nhóm]') ? gName : `[Nhóm] ${gName}`;
-                groupNameCache.set(gId, groupTitle);
-
-                let cCheck = await pool.query(
-                  `SELECT id FROM contacts WHERE channel_id = $1 AND external_user_id = $2`,
-                  [channelId, gId]
-                );
-                if (cCheck.rows.length === 0) {
-                  const newCont = await pool.query(`
-                    INSERT INTO contacts (channel_id, external_user_id, name, avatar_url, phone, metadata)
-                    VALUES ($1, $2, $3, $4, '', $5)
-                    RETURNING id
-                  `, [channelId, gId, groupTitle, grp.avt || null, JSON.stringify({ is_group: true, group_id: gId })]);
-
-                  await pool.query(`
-                    INSERT INTO conversations (channel_id, contact_id, id__conversations_statuses, last_message_preview, last_message_at, unread_count, metadata)
-                    VALUES ($1, $2, 1, 'Hội thoại nhóm Zalo', CURRENT_TIMESTAMP, 0, $3)
-                    ON CONFLICT (channel_id, contact_id) DO NOTHING
-                  `, [channelId, newCont.rows[0].id, JSON.stringify({ is_group: true })]);
-                }
-              }
-            } catch (gErr) {
-              // Bỏ qua lỗi nhóm đơn lẻ
-            }
-          }
-          console.log(`✅ [Zalo] Đã hoàn tất đồng bộ ${missingGroupIds.length} nhóm mới.`);
+      for (const row of dbContacts.rows) {
+        const isGrp = Boolean(row.metadata?.is_group || (row.name && row.name.startsWith('[Nhóm]')));
+        if (isGrp) {
+          groupNameCache.set(row.external_user_id, row.name);
+        }
+        if (row.name && !row.name.startsWith('Zalo User')) {
+          contactProfileCache.set(row.external_user_id, {
+            name: row.name,
+            avatar_url: row.avatar_url || null,
+            phone: row.phone || '',
+            metadata: row.metadata || {},
+          });
         }
       }
+      if (dbContacts.rows.length > 0) {
+        console.log(`📋 [Zalo] Đã nạp ${dbContacts.rows.length} liên hệ từ danh bạ vào bộ nhớ đệm.`);
+      }
     } catch (err) {
-      // Bỏ qua lỗi background group
+      // Bỏ qua lỗi
     }
   })();
 
